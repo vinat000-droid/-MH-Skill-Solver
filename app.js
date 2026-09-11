@@ -47,22 +47,99 @@ function augmentFeasibility(armor,plans){
 }
 function renderResult(r,t,rank){const q=r.qplan;const charm=r.charm;const finalSkills=merge(merge(r.armorSkills,charm.effects),q?.skills||{});return `<section class="card result"><h2>候補 #${rank}</h2><div class="grid">${r.chosen.map(a=>`<div class="piece"><b>${a.part}</b> ${a.name}<br><span class="small">${a.rarity} / スロット ${a.slots.join('-')}</span></div>`).join('')}</div><div class="piece"><b>護石</b> ${escapeHtml(charm.label)}<br><span class="small">${Object.entries(charm.effects).map(([k,v])=>LABEL[k]?LABEL[k]+' +'+v:'').filter(Boolean).join(' / ')||'スキルなし'} / スロット ${charm.slots.join('-')}</span></div>${q?.plans?.length?`<h3>傀異錬成プラン</h3>${q.plans.map(x=>`<span class="tag">${LABEL[x.skill]||x.skill} +1 / コスト${x.cost}</span>`).join('')}<p class="small">基礎コスト ${q.baseCost}。必要コストとの差分: ${q.deficits.join(', ')||'0'}。差分がある場合は防御・耐性低下やスキル欠損を伴う錬成結果が必要です。</p>`:''}<h3>装飾品</h3>${r.deco.length?r.deco.map(d=>`<span class="tag">${d.name} [${d.slot}]</span>`).join(''):'なし'}<h3>目標スキル</h3>${Object.entries(t).map(([k,v])=>`<span class="tag ${finalSkills[k]>=v?'oktag':'badtag'}">${LABEL[k]} ${Math.min(v,finalSkills[k]||0)}/${v}</span>`).join('')}<p class="small">※護石は「入力した手持ち護石」を固定。傀異錬成は、ゲーム内で抽選可能なスキル種別とコストクラスを使った必要条件として表示します。</p></section>`}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-function solve(){const t=targets(),ch=charm(),parts=[['頭',state.db.head],['胴',state.db.chest],['腕',state.db.arms],['腰',state.db.waist],['脚',state.db.legs]],mr=$('tier').value==='mr';const pools=parts.map(([p,rows])=>rows.map(r=>armorRow(r,p)).filter(a=>!mr||a.rarity>=8));const limit=+$('limit').value||10;let nodes=0,results=[];
-  // Prioritize armor that already carries requested skills and slots.
+function solve(){
+  if(!state.db){return}
+  const t=targets(),ch=charm(),parts=[['頭',state.db.head],['胴',state.db.chest],['腕',state.db.arms],['腰',state.db.waist],['脚',state.db.legs]],mr=$('tier').value==='mr';
+  const limit=Math.min(+$('limit').value||10,50);
+  const pools=parts.map(([p,rows])=>rows.map(r=>armorRow(r,p)).filter(a=>!mr||a.rarity>=8));
   pools.forEach(p=>p.sort((a,b)=>scoreArmor(b,t)-scoreArmor(a,t)));
-  function dfs(i,chosen,skills,slots){nodes++;if(i===5){const need=skillNeed(merge(skills,ch.effects),t);const allSlots=slotsWithWeapon([...slots,...ch.slots]);const deco=fillDecos(allSlots,need);if(deco){results.push({chosen,armorSkills:skills,charm:ch,deco,qplan:null});return results.length>=limit}const qp=quriousPlans(allSlots,merge(skills,ch.effects),need,t);if(qp.length){const best=augmentFeasibility(chosen[0],qp[0]);results.push({chosen,armorSkills:skills,charm:ch,deco:best.deco,qplan:best});return results.length>=limit}return false}
-    for(const a of pools[i]){const ns=merge(skills,a.skills),nslots=[...slots,...a.slots];if(i<4){ // coarse safe upper bound
-        let can=true;for(const k of Object.keys(t)){let ub=ns[k]||0;for(let j=i+1;j<5;j++)for(const x of pools[j].slice(0,120))ub=Math.max(ub,ns[k]+(x.skills[k]||0));if(ub+(state.decos.length?4:0)<t[k]){ /* don't prune: decorations and qurious may fill */ }}
-        void can;
-      }
-      if(dfs(i+1,[...chosen,a],ns,nslots))return true;
-    }return false;
+
+  // Exact impossibility check for skills that cannot be supplied by decorations/Qurious.
+  // This prevents the old FINAL from silently chewing through an enormous 5-part DFS.
+  const decoMaxBySkill={};
+  for(const d of state.decos){for(const [k,v] of d.effects){decoMaxBySkill[k]=Math.max(decoMaxBySkill[k]||0,v)}}
+  const impossible=[];
+  for(const k of Object.keys(t)){
+    if(t[k]<=0) continue;
+    const armorMax=pools.reduce((sum,p)=>sum+Math.max(0,...p.map(a=>a.skills[k]||0)),0);
+    const charmMax=ch.effects[k]||0;
+    const qMax=Q_FORBIDDEN.has(k)?0:1;
+    // Decoration upper bound: one best contribution per available slot is intentionally optimistic.
+    const decoPossible=decoMaxBySkill[k]||0;
+    if(armorMax+charmMax+qMax+decoPossible<t[k]) impossible.push(k);
   }
-  dfs(0,[],{},[]);results=dedupe(results).slice(0,limit);render(results,t,nodes,pools)
+  if(impossible.length){
+    render([],t,0,pools,`現条件では達成不能: ${impossible.map(k=>LABEL[k]||k).join(' / ')}`);
+    return;
+  }
+
+  // Precompute a safe per-depth upper bound. For each remaining armor part we take the
+  // maximum contribution of that skill from any armor in the part. This is an upper bound,
+  // so pruning never removes a legal solution.
+  const remMax=Array.from({length:6},()=>({}));
+  for(let i=4;i>=0;i--){
+    const o={...(remMax[i+1]||{})};
+    for(const k of Object.keys(t)) o[k]=(o[k]||0)+Math.max(0,...pools[i].map(a=>a.skills[k]||0));
+    remMax[i]=o;
+  }
+
+  let nodes=0,results=[];
+  const memo=new Set();
+  const decoCache=new Map();
+  const slotsKey=xs=>[...xs].sort((a,b)=>b-a).join(',');
+  function decoFor(slots,need){
+    const positive=Object.entries(need).filter(([,v])=>v>0);
+    if(!positive.length)return [];
+    const key=slotsKey(slots)+'|'+positive.map(([k,v])=>k+':'+v).join(',');
+    if(decoCache.has(key))return decoCache.get(key);
+    const z=fillDecos(slots,need)||null;decoCache.set(key,z);return z;
+  }
+  function prune(i,skills){
+    for(const k of Object.keys(t)){
+      const have=skills[k]||0;
+      if(have>=t[k])continue;
+      const optimistic=have+(remMax[i][k]||0)+(Q_FORBIDDEN.has(k)?0:1);
+      if(optimistic>=t[k])continue;
+      // If decorations can supply it, do not prune here.
+      if((decoMaxBySkill[k]||0)>0)continue;
+      return true;
+    }
+    return false;
+  }
+  function dfs(i,chosen,skills,slots){
+    nodes++;
+    if(nodes>250000){return true} // hard mobile safety cap; results found so far remain valid.
+    if(prune(i,skills))return false;
+    if(i===5){
+      const base=merge(skills,ch.effects);
+      const need=skillNeed(base,t);
+      const allSlots=slotsWithWeapon([...slots,...ch.slots]);
+      const deco=decoFor(allSlots,need);
+      if(deco){results.push({chosen,armorSkills:skills,charm:ch,deco,qplan:null});return results.length>=limit}
+      const qp=quriousPlans(allSlots,base,need,t);
+      if(qp.length){
+        const best=augmentFeasibility(chosen[0],qp[0]);
+        results.push({chosen,armorSkills:skills,charm:ch,deco:best.deco,qplan:best});
+        return results.length>=limit;
+      }
+      return false;
+    }
+    const stateKey=i+'|'+Object.keys(t).map(k=>Math.min(t[k],skills[k]||0)).join(',')+'|'+slotsKey(slots);
+    if(memo.has(stateKey))return false;memo.add(stateKey);
+    for(const a of pools[i]){
+      const ns=merge(skills,a.skills), nslots=[...slots,...a.slots];
+      if(dfs(i+1,[...chosen,a],ns,nslots))return true;
+    }
+    return false;
+  }
+  dfs(0,[],{},[]);
+  results=dedupe(results).slice(0,limit);
+  render(results,t,nodes,pools,nodes>250000?'モバイル安全上限に到達しました。表示中の候補は確認済みのものです。':null)
 }
+
 function scoreArmor(a,t){return Object.entries(t).reduce((n,[k,v])=>n+Math.min(v,a.skills[k]||0)*100,0)+a.slots.reduce((n,x)=>n+x,0)*2+a.rarity}
 function dedupe(rs){const s=new Set();return rs.filter(r=>{const k=r.chosen.map(x=>x.name).join('|')+'|'+r.deco.map(x=>x.name).join('|')+'|'+JSON.stringify(r.qplan?.plans||[]);if(s.has(k))return false;s.add(k);return true})}
-function render(results,t,nodes,pools){$('status').className='card '+(results.length?'ok':'warn');$('status').innerHTML=`<b>${results.length?'完成候補を検出しました':'条件を満たす候補が見つかりません'}</b><p class="small">探索ノード ${nodes.toLocaleString()} / 防具候補 ${pools.map(x=>x.length).join(' / ')} / 装飾品 ${state.decos.length}種</p>`;$('status').classList.remove('hidden');$('results').innerHTML=results.map((r,i)=>renderResult(r,t,i+1)).join('')||`<section class="card result"><h3>検索範囲を広げてください</h3><p class="small">護石条件を緩めるか、傀異錬成許容をONにして再検索してください。</p></section>`}
+function render(results,t,nodes,pools,note){$('status').className='card '+(results.length?'ok':'warn');$('status').innerHTML=`<b>${results.length?'完成候補を検出しました':'条件を満たす候補が見つかりません'}</b><p class="small">探索ノード ${nodes.toLocaleString()} / 防具候補 ${pools.map(x=>x.length).join(' / ')} / 装飾品 ${state.decos.length}種</p>${note?`<p class="small">${escapeHtml(note)}</p>`:''}`;$('status').classList.remove('hidden');$('results').innerHTML=results.map((r,i)=>renderResult(r,t,i+1)).join('')||`<section class="card result"><h3>検索範囲を広げてください</h3><p class="small">護石条件を緩めるか、傀異錬成許容をONにして再検索してください。</p></section>`}
 function makeUI(){TARGETS.forEach(([n,id,m])=>$('skills').insertAdjacentHTML('beforeend',`<div class="skill"><span>${n}</span><input id="${id}" type="number" min="0" max="${m}" value="${m}"></div>`))}
 $('solveBtn').onclick=solve;$('resetBtn').onclick=()=>location.reload();makeUI();
 (async()=>{try{const db=await MHRSBLibrary.all((k,n)=>$('loadState').textContent=`${k} 読み込み完了（${n}件）`);state.db=db;state.decos=decos(db);$('loadState').textContent=`データベース読み込み完了（装飾品 ${state.decos.length}種）`;$('loadState').className='loading ok';$('solveBtn').disabled=false;$('solveBtn').textContent='検索する'}catch(e){$('loadState').textContent='データベース読み込み失敗: '+e.message;$('loadState').className='loading err'}})();
