@@ -1,9 +1,7 @@
-# MHRSB Skill Solver
+# MHRSB Skill Solver GitHub v2
 
-Sunbreak専用HTML版。GitHub Pagesで公開可能な静的構成です。
+前版の「画面だけ・サンプルデータ」から修正し、GitHub Pages上でCSVデータを読み込み、実際に防具5部位＋装飾品の候補検索を実行するブラウザ版です。
 
-## 重要
-この配布物はUIとソルバー構造を完成させた版ですが、全Ver.16.0.0データベースを同梱した完全DB版ではありません。サンプル防具・護石を使って動作します。完全DB化には全防具、装飾品、覇気護石、傀異錬成データの投入が必要です。
+データはEXXXI/RiseSimのSunbreak Ver.16系CSVを参照します。RiseSimはSunbreak Var16.0系統対応を明記しています。
 
-## GitHub Pages
-リポジトリのルートに index.html / style.css / app.js / data / .nojekyll を置き、Settings → Pages → Deploy from a branch → main / root で公開します。
+重要：護石の全抽選テーブル、傀異錬成の全コスト・抽選表、完全な最適化はこのv2ではまだ未実装です。まず「押しても何も起きない」問題と、サンプルデータだけだった問題を解消した実動版です。
