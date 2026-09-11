@@ -2,7 +2,6 @@ const $=id=>document.getElementById(id);
 const state={db:null,decos:[],skillsMeta:[]};
 const ELEMENTS=[['火','fire'],['水','water'],['氷','ice'],['雷','thunder'],['龍','dragon']];
 let selectedElement='fire';
-const DEFAULT_TARGETS={elementalAttack:5,elementalWeakness:3,dragonConversion:3,furious:3,steelBlessing:3,dereliction:3,loadShells:2,frostcraft:3,guardUp:1,embolden:3,evadeExtender:3};
 const LABEL={elementalAttack:'属性攻撃強化',elementalWeakness:'弱点特効【属性】',dragonConversion:'龍気変換',furious:'激昂',steelBlessing:'鋼殻の恩恵',dereliction:'伏魔響命',loadShells:'砲弾装填',frostcraft:'冰気錬成',guardUp:'ガード強化',embolden:'煽衛',evadeExtender:'回避距離'};
 const Q_COST={elementalWeakness:9,dragonConversion:12,furious:9,steelBlessing:6,loadShells:6,frostcraft:12,guardUp:6,embolden:9,evadeExtender:6};
 const Q_FORBIDDEN=new Set(['dereliction','berserk','heavenSent']);
@@ -20,6 +19,7 @@ function buildSkillMeta(db){
     const raw=r['スキル系統']||r['発動スキル'];
     const display=norm(raw);
     if(!display||ELEMENT_SKILL_NAMES.has(display))return;
+    if(/^(?:[1-4]スロ|スロット|slot)/i.test(display) || /^(?:1|2|3|4)スロLv\d+$/i.test(display))return;
     const key=keyFor(display);
     if(!key||key.includes('属性攻撃強化_'))return;
     const max=parseSkillLevel(r['発動スキル']);
@@ -29,12 +29,7 @@ function buildSkillMeta(db){
   });
   return [...map.values()].sort((a,b)=>a.category.localeCompare(b.category,'ja')||a.name.localeCompare(b.name,'ja'));
 }
-function targets(){
-  const t={};
-  document.querySelectorAll('[data-skill-key]').forEach(el=>{const k=el.dataset.skillKey,v=+el.value||0;if(v>0)t[k]=v});
-  const ea=+$('elementalAttack')?.value||0;if(ea)t[`elementalAttack_${selectedElement}`]=ea;
-  return t;
-}
+function targets(){ return window.__selectedTargets ? window.__selectedTargets() : {}; }
 function merge(a,b){const o={...a};for(const[k,v]of Object.entries(b))o[k]=(o[k]||0)+v;return o}
 function decos(db){return db.decorations.map(r=>{const effects=[];for(let i=1;i<=3;i++){const raw=r['スキル系統'+i],v=+(r['スキル値'+i]||0);const k=keyFor(raw);if(k&&v)effects.push([k,v])}return{name:r['名前'],size:+r['スロットサイズ']||0,effects}}).filter(d=>d.size&&d.effects.length)}
 function charm(){const effects={};for(let i=1;i<=2;i++){const k=keyFor($(`charmSkill${i}`).value);const v=+$(`charmLv${i}`).value||0;if(k&&v)effects[k]=(effects[k]||0)+v}return{effects,slots:[+$('charmS1').value||0,+$('charmS2').value||0,+$('charmS3').value||0],label:$('charmName').value.trim()||'手持ち護石'} }
@@ -70,17 +65,37 @@ function solve(){
 }
 function scoreArmor(a,t){return Object.entries(t).reduce((n,[k,v])=>n+Math.min(v,a.skills[k]||0)*100,0)+a.slots.reduce((n,x)=>n+x,0)*2+a.rarity}
 function dedupe(rs){const s=new Set();return rs.filter(r=>{const k=r.chosen.map(x=>x.name).join('|')+'|'+r.deco.map(x=>x.name).join('|')+'|'+JSON.stringify(r.qplan?.plans||[]);if(s.has(k))return false;s.add(k);return true})}
-function render(results,t,nodes,pools,note){$('status').className='card '+(results.length?'ok':'warn');$('status').innerHTML=`<b>${results.length?'完成候補を検出しました':'条件を満たす候補が見つかりません'}</b><p class="small">探索ノード ${nodes.toLocaleString()} / 防具候補 ${pools.map(x=>x.length).join(' / ')} / 装飾品 ${state.decos.length}種 / 傀異錬成 ${$('allowQurious').checked?'許容':'不許可'}</p>${note?`<p class="small">${escapeHtml(note)}</p>`:''}`;$('status').classList.remove('hidden');$('results').innerHTML=results.map((r,i)=>renderResult(r,t,i+1)).join('')||`<section class="card result"><h3>条件を満たす候補がありません</h3><p class="small">検索対象を「全防具」に広げるか、「傀異錬成を許容する」をONにしてください。護石を固定している場合は、護石条件を見直してください。</p></section>`}
+function render(results,t,nodes,pools,note){$('status').className='card '+(results.length?'ok':'warn');$('status').innerHTML=`<b>${results.length?'完成候補を検出しました':'条件を満たす候補が見つかりません'}</b><p class="small">探索ノード ${nodes.toLocaleString()} / 防具候補 ${pools.map(x=>x.length).join(' / ')} / 装飾品 ${state.decos.length}種 / 傀異錬成 ${$('allowQurious').checked?'許容':'不許可'}</p>${note?`<p class="small">${escapeHtml(note)}</p>`:''}`;$('status').classList.remove('hidden');$('results').innerHTML=results.map((r,i)=>renderResult(r,t,i+1)).join('')||`<section class="card result"><h3>条件を満たす候補がありません</h3><p class="small">検索対象を「全防具」に広げる、護石条件を見直す、または「傀異錬成を許容する」を切り替えて再検索してください。</p></section>`}
 function renderSkillPicker(){
   const root=$('skills');root.innerHTML='';
-  root.insertAdjacentHTML('beforeend',`<div class="skill special"><div><b>属性攻撃強化</b><div class="small">火・水・氷・雷・龍から選択</div></div><div class="skillControls"><select id="elementSelect" aria-label="属性">${ELEMENTS.map(([jp,id])=>`<option value="${id}">${jp}属性</option>`).join('')}</select><select id="elementalAttack" aria-label="属性攻撃強化レベル">${Array.from({length:6},(_,i)=>`<option value="${i}" ${i===5?'selected':''}>Lv${i}</option>`).join('')}</select></div></div>`);
-  const groups=new Map();state.skillsMeta.forEach(s=>{if(s.key.startsWith('elementalAttack_'))return;const arr=groups.get(s.category)||[];arr.push(s);groups.set(s.category,arr)});
-  const ordered=[...groups.entries()];
-  root.insertAdjacentHTML('beforeend',`<div class="skillTools"><input id="skillSearch" placeholder="スキル名を検索"><select id="skillCategory"><option value="all">すべてのカテゴリ</option>${ordered.map(([c])=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select><button type="button" id="clearSkills">選択を全解除</button></div><div id="skillList"></div>`);
-  function row(s){const def=DEFAULT_TARGETS[s.key]||0;return `<label class="skill skillRow" data-name="${escapeHtml(s.name)}" data-category="${escapeHtml(s.category)}"><span>${escapeHtml(s.name)}</span><select data-skill-key="${escapeHtml(s.key)}" aria-label="${escapeHtml(s.name)}">${Array.from({length:s.max+1},(_,i)=>`<option value="${i}" ${i===def?'selected':''}>Lv${i}</option>`).join('')}</select></label>`}
-  $('skillList').innerHTML=ordered.flatMap(([,arr])=>arr).map(row).join('');
-  const filter=()=>{const q=$('skillSearch').value.trim().toLowerCase(),cat=$('skillCategory').value;document.querySelectorAll('.skillRow').forEach(el=>{el.hidden=(q&&!el.dataset.name.toLowerCase().includes(q))||(cat!=='all'&&el.dataset.category!==cat)})};
-  $('skillSearch').oninput=filter;$('skillCategory').onchange=filter;$('clearSkills').onclick=()=>{document.querySelectorAll('[data-skill-key]').forEach(el=>el.value='0');$('elementalAttack').value='0'};$('elementSelect').onchange=e=>{selectedElement=e.target.value};
+  root.insertAdjacentHTML('beforeend',`<div class="selectedHeader"><div><b>目標スキル</b><span id="selectedCount" class="small"></span></div><button type="button" id="addSkillBtn" class="secondary">＋ スキルを追加</button></div>`);
+  root.insertAdjacentHTML('beforeend',`<div id="selectedSkills" class="selectedSkills"></div>`);
+  root.insertAdjacentHTML('beforeend',`<div id="skillPickerPanel" class="pickerPanel hidden"><div class="skillTools"><input id="skillSearch" placeholder="スキル名を検索"><select id="skillCategory"><option value="all">カテゴリ：すべて</option>${[...new Set(state.skillsMeta.map(s=>s.category))].filter(Boolean).map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select><button type="button" id="closeSkillPicker" class="secondary">閉じる</button></div><div id="skillList" class="skillList"></div></div>`);
+  const selected={};
+  const renderSelected=()=>{
+    const box=$('selectedSkills');const entries=Object.entries(selected).filter(([,v])=>v>0);
+    $('selectedCount').textContent=entries.length?`（${entries.length}個）`:'';
+    box.innerHTML=entries.map(([k,v])=>{
+      if(k.startsWith('elementalAttack_')) return `<div class="selectedRow"><span class="selectedName">${escapeHtml(targetLabel(k))}</span><select data-selected-key="${escapeHtml(k)}">${Array.from({length:6},(_,i)=>`<option value="${i}" ${i===v?'selected':''}>Lv${i}</option>`).join('')}</select><button type="button" class="removeSkill" data-remove-key="${escapeHtml(k)}">×</button></div>`;
+      const meta=state.skillsMeta.find(x=>x.key===k);const max=meta?.max||5;
+      return `<div class="selectedRow"><span class="selectedName">${escapeHtml(targetLabel(k))}</span><select data-selected-key="${escapeHtml(k)}">${Array.from({length:max+1},(_,i)=>`<option value="${i}" ${i===v?'selected':''}>Lv${i}</option>`).join('')}</select><button type="button" class="removeSkill" data-remove-key="${escapeHtml(k)}" aria-label="${escapeHtml(targetLabel(k))}を削除">×</button></div>`;
+    }).join('')||'<p class="small">目標スキルはまだ選択されていません。</p>';
+    box.querySelectorAll('[data-selected-key]').forEach(el=>el.onchange=()=>{const k=el.dataset.selectedKey,v=+el.value||0;if(v)selected[k]=v;else delete selected[k];renderSelected();});
+    box.querySelectorAll('[data-remove-key]').forEach(el=>el.onclick=()=>{delete selected[el.dataset.removeKey];renderSelected();});
+  };
+  const addCandidates=()=>{
+    const q=$('skillSearch').value.trim().toLowerCase(),cat=$('skillCategory').value;
+    const elemental=[['火','fire'],['水','water'],['氷','ice'],['雷','thunder'],['龍','dragon']].map(([jp,id])=>({key:`elementalAttack_${id}`,name:`${jp}属性攻撃強化`,max:5,category:'属性'}));
+    const all=[...elemental,...state.skillsMeta.filter(s=>!s.key.startsWith('elementalAttack_'))];
+    const candidates=all.filter(s=>!selected[s.key]&&(!q||s.name.toLowerCase().includes(q))&&(cat==='all'||s.category===cat));
+    $('skillList').innerHTML=candidates.slice(0,80).map(s=>`<button type="button" class="skillCandidate" data-key="${escapeHtml(s.key)}"><span>${escapeHtml(s.name)}</span><span class="small">最大Lv${s.max}</span></button>`).join('')||'<p class="small">該当するスキルがありません。</p>';
+    $('skillList').querySelectorAll('.skillCandidate').forEach(el=>el.onclick=()=>{const s=candidates.find(x=>x.key===el.dataset.key);if(!s)return;selected[s.key]=1;renderSelected();addCandidates();});
+  };
+  $('addSkillBtn').onclick=()=>{$('skillPickerPanel').classList.remove('hidden');$('skillSearch').focus();addCandidates();};
+  $('closeSkillPicker').onclick=()=>{$('skillPickerPanel').classList.add('hidden');};
+  $('skillSearch').oninput=addCandidates;$('skillCategory').onchange=addCandidates;
+  renderSelected();
+  window.__selectedTargets=()=>Object.fromEntries(Object.entries(selected).filter(([,v])=>v>0));
 }
 $('solveBtn').onclick=solve;$('resetBtn').onclick=()=>location.reload();
 (async()=>{try{const db=await MHRSBLibrary.all((k,n)=>$('loadState').textContent=`${k} 読み込み完了（${n}件）`);state.db=db;state.decos=decos(db);state.skillsMeta=buildSkillMeta(db);renderSkillPicker();$('loadState').textContent=`データベース読み込み完了（スキル ${state.skillsMeta.length}種 / 装飾品 ${state.decos.length}種）`;$('loadState').className='loading ok';$('solveBtn').disabled=false;$('solveBtn').textContent='検索する'}catch(e){$('loadState').textContent='データベース読み込み失敗: '+e.message;$('loadState').className='loading err'}})();
