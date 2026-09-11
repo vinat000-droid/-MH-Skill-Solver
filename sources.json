@@ -1,0 +1,13 @@
+{
+  "game": "Monster Hunter Rise: Sunbreak",
+  "version": "16.0",
+  "sources": {
+    "skills": "https://raw.githubusercontent.com/EXXXI/RiseSim/refs/heads/main/src/SimModel/MHR_SKILL.csv",
+    "decorations": "https://raw.githubusercontent.com/EXXXI/RiseSim/refs/heads/main/src/SimModel/MHR_DECO.csv",
+    "head": "https://raw.githubusercontent.com/EXXXI/RiseSim/refs/heads/main/src/SimModel/MHR_EQUIP_HEAD.csv",
+    "chest": "https://raw.githubusercontent.com/EXXXI/RiseSim/refs/heads/main/src/SimModel/MHR_EQUIP_BODY.csv",
+    "arms": "https://raw.githubusercontent.com/EXXXI/RiseSim/refs/heads/main/src/SimModel/MHR_EQUIP_ARM.csv",
+    "waist": "https://raw.githubusercontent.com/EXXXI/RiseSim/refs/heads/main/src/SimModel/MHR_EQUIP_WST.csv",
+    "legs": "https://raw.githubusercontent.com/EXXXI/RiseSim/refs/heads/main/src/SimModel/MHR_EQUIP_LEG.csv"
+  }
+}
