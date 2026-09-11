@@ -93,8 +93,8 @@ function renderSkillPicker(){
     const elemental=[['火','fire'],['水','water'],['氷','ice'],['雷','thunder'],['龍','dragon']].map(([jp,id])=>({key:`elementalAttack_${id}`,name:`${jp}属性攻撃強化`,max:5,category:'属性'}));
     const all=[...elemental,...state.skillsMeta.filter(s=>!s.key.startsWith('elementalAttack_'))];
     const candidates=all.filter(s=>!selected[s.key]&&(!q||s.name.toLowerCase().includes(q))&&(cat==='all'||s.category===cat));
-    $('skillList').innerHTML=candidates.slice(0,80).map(s=>`<button type="button" class="skillCandidate" data-key="${escapeHtml(s.key)}"><span>${escapeHtml(s.name)}</span><span class="small">最大Lv${s.max}</span></button>`).join('')||'<p class="small">該当するスキルがありません。</p>';
-    $('skillList').querySelectorAll('.skillCandidate').forEach(el=>el.onclick=()=>{const s=candidates.find(x=>x.key===el.dataset.key);if(!s)return;selected[s.key]=1;renderSelected();addCandidates();});
+    $('skillList').innerHTML=candidates.slice(0,80).map(s=>`<div class="skillCandidate" data-key="${escapeHtml(s.key)}"><span class="candidateName">${escapeHtml(s.name)}</span><select class="candidateLevel" data-candidate-key="${escapeHtml(s.key)}">${Array.from({length:s.max+1},(_,i)=>`<option value="${i}" ${i===1?'selected':''}>Lv${i}</option>`).join('')}</select><button type="button" class="candidateAdd" data-add-key="${escapeHtml(s.key)}">追加</button></div>`).join('')||'<p class="small">該当するスキルがありません。</p>';
+    $('skillList').querySelectorAll('.candidateAdd').forEach(el=>el.onclick=()=>{const s=candidates.find(x=>x.key===el.dataset.addKey);if(!s)return;const sel=$(`skillList`).querySelector(`[data-candidate-key="${CSS.escape(s.key)}"]`);selected[s.key]=sel?Math.max(1,+sel.value||1):1;renderSelected();addCandidates();});
   };
   $('addSkillBtn').onclick=()=>{$('skillPickerPanel').classList.remove('hidden');$('skillSearch').focus();addCandidates();};
   $('closeSkillPicker').onclick=()=>{$('skillPickerPanel').classList.add('hidden');};
