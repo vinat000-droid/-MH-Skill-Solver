@@ -49,7 +49,7 @@ function renderResult(r,t,rank){const q=r.qplan;const charm=r.charm;const finalS
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function solve(){
   if(!state.db){return}
-  const t=targets(),ch=charm(),parts=[['頭',state.db.head],['胴',state.db.chest],['腕',state.db.arms],['腰',state.db.waist],['脚',state.db.legs]],mr=$('tier').value==='mr';
+  const t=targets(),ch=charm(),allowQ=$('allowQurious').checked,parts=[['頭',state.db.head],['胴',state.db.chest],['腕',state.db.arms],['腰',state.db.waist],['脚',state.db.legs]],mr=$('tier').value==='mr';
   const limit=Math.min(+$('limit').value||10,50);
   const pools=parts.map(([p,rows])=>rows.map(r=>armorRow(r,p)).filter(a=>!mr||a.rarity>=8));
   pools.forEach(p=>p.sort((a,b)=>scoreArmor(b,t)-scoreArmor(a,t)));
@@ -98,7 +98,7 @@ function solve(){
     for(const k of Object.keys(t)){
       const have=skills[k]||0;
       if(have>=t[k])continue;
-      const optimistic=have+(remMax[i][k]||0)+(Q_FORBIDDEN.has(k)?0:1);
+      const optimistic=have+(remMax[i][k]||0)+(allowQ&&!Q_FORBIDDEN.has(k)?1:0);
       if(optimistic>=t[k])continue;
       // If decorations can supply it, do not prune here.
       if((decoMaxBySkill[k]||0)>0)continue;
@@ -116,6 +116,7 @@ function solve(){
       const allSlots=slotsWithWeapon([...slots,...ch.slots]);
       const deco=decoFor(allSlots,need);
       if(deco){results.push({chosen,armorSkills:skills,charm:ch,deco,qplan:null});return results.length>=limit}
+      if(!allowQ) return false;
       const qp=quriousPlans(allSlots,base,need,t);
       if(qp.length){
         const best=augmentFeasibility(chosen[0],qp[0]);
@@ -139,7 +140,7 @@ function solve(){
 
 function scoreArmor(a,t){return Object.entries(t).reduce((n,[k,v])=>n+Math.min(v,a.skills[k]||0)*100,0)+a.slots.reduce((n,x)=>n+x,0)*2+a.rarity}
 function dedupe(rs){const s=new Set();return rs.filter(r=>{const k=r.chosen.map(x=>x.name).join('|')+'|'+r.deco.map(x=>x.name).join('|')+'|'+JSON.stringify(r.qplan?.plans||[]);if(s.has(k))return false;s.add(k);return true})}
-function render(results,t,nodes,pools,note){$('status').className='card '+(results.length?'ok':'warn');$('status').innerHTML=`<b>${results.length?'完成候補を検出しました':'条件を満たす候補が見つかりません'}</b><p class="small">探索ノード ${nodes.toLocaleString()} / 防具候補 ${pools.map(x=>x.length).join(' / ')} / 装飾品 ${state.decos.length}種</p>${note?`<p class="small">${escapeHtml(note)}</p>`:''}`;$('status').classList.remove('hidden');$('results').innerHTML=results.map((r,i)=>renderResult(r,t,i+1)).join('')||`<section class="card result"><h3>検索範囲を広げてください</h3><p class="small">護石条件を緩めるか、傀異錬成許容をONにして再検索してください。</p></section>`}
+function render(results,t,nodes,pools,note){$('status').className='card '+(results.length?'ok':'warn');$('status').innerHTML=`<b>${results.length?'完成候補を検出しました':'条件を満たす候補が見つかりません'}</b><p class="small">探索ノード ${nodes.toLocaleString()} / 防具候補 ${pools.map(x=>x.length).join(' / ')} / 装飾品 ${state.decos.length}種 / 傀異錬成 ${$('allowQurious').checked?'許容':'不許可'}</p>${note?`<p class="small">${escapeHtml(note)}</p>`:''}`;$('status').classList.remove('hidden');$('results').innerHTML=results.map((r,i)=>renderResult(r,t,i+1)).join('')||`<section class="card result"><h3>条件を満たす候補がありません</h3><p class="small">検索対象を「全防具」に広げるか、「傀異錬成を許容する」をONにしてください。護石を固定している場合は、護石条件を見直してください。</p></section>`}
 function makeUI(){TARGETS.forEach(([n,id,m])=>$('skills').insertAdjacentHTML('beforeend',`<div class="skill"><span>${n}</span><input id="${id}" type="number" min="0" max="${m}" value="${m}"></div>`))}
 $('solveBtn').onclick=solve;$('resetBtn').onclick=()=>location.reload();makeUI();
 (async()=>{try{const db=await MHRSBLibrary.all((k,n)=>$('loadState').textContent=`${k} 読み込み完了（${n}件）`);state.db=db;state.decos=decos(db);$('loadState').textContent=`データベース読み込み完了（装飾品 ${state.decos.length}種）`;$('loadState').className='loading ok';$('solveBtn').disabled=false;$('solveBtn').textContent='検索する'}catch(e){$('loadState').textContent='データベース読み込み失敗: '+e.message;$('loadState').className='loading err'}})();
