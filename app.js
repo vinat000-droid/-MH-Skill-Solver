@@ -17,12 +17,17 @@ function buildSkillMeta(db){
   const map=new Map();
   (db.skill||[]).forEach(r=>{
     const raw=r['スキル系統']||r['発動スキル'];
-    const display=norm(raw);
+    // CSVの「発動スキル」にはLv1/Lv2/Lv3が別行で存在するため、
+    // リストには「スキル名」だけを1件として登録する。
+    const rawName=norm(raw);
+    const display=rawName.replace(/\s*Lv\s*\d+$/i,'').trim();
     if(!display||ELEMENT_SKILL_NAMES.has(display))return;
-    if(/^(?:[1-4]スロ|スロット|slot)/i.test(display) || /^(?:1|2|3|4)スロLv\d+$/i.test(display))return;
+    if(/^(?:[1-4]スロ|スロット|slot)/i.test(display))return;
     const key=keyFor(display);
     if(!key||key.includes('属性攻撃強化_'))return;
-    const max=parseSkillLevel(r['発動スキル']);
+    const maxFromActivation=parseSkillLevel(r['発動スキル']);
+    const maxFromRow=+(r['最大Lv']||r['最大レベル']||0);
+    const max=Math.max(maxFromActivation,maxFromRow,1);
     const category=r['カテゴリ']||'その他';
     const existing=map.get(key);
     if(!existing||max>existing.max)map.set(key,{key,name:key==='elementalWeakness'?'弱点特効【属性】':display,max,category,cost:+r['コスト']||0});
