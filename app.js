@@ -89,6 +89,7 @@ function charmCandidates(t,armorSkills){
   // Empty input means 'no fixed charm'; do not penalize it as an illegal talisman.
   fixed.legal=Object.keys(fixed.effects).length||fixed.slots.some(Boolean)?legalCharmForTarget(fixed.effects,fixed.slots):true; out.push(fixed);
   const n=need(armorSkills,t); const keys=Object.keys(n).filter(k=>n[k]>0).filter(k=>talismanRule(k));
+  // Practical policy: generated recommendation = exactly one useful target skill.
   const candidates=[];
   // One-skill Haki candidates
   for(const k of keys){
@@ -97,14 +98,9 @@ function charmCandidates(t,armorSkills){
       const effects={[k]:lv}; if(legalHakiCharm(effects,sl))candidates.push({label:`錬金候補：${targetLabel(k)} Lv${lv}`,effects,slots:sl,source:'傀異錬金術・覇気',generated:true,legal:true});
     }
   }
-  // Two-skill candidates: respect skill1/skill2-specific maxima and any rank combination.
-  for(let i=0;i<keys.length;i++)for(let j=i+1;j<keys.length;j++){
-    const a=keys[i],b=keys[j],ra=talismanRule(a),rb=talismanRule(b); if(!ra||!rb)continue;
-    for(const [first,second] of [[a,b],[b,a]]){
-      const rf=talismanRule(first),rs=talismanRule(second); const l1=Math.min(n[first],rf[1]),l2=Math.min(n[second],rs[2]);
-      for(let x=l1;x>=1;x--)for(let y=l2;y>=1;y--){const effects={[first]:x,[second]:y};for(const sl of HAKI_SLOTS)if(legalHakiCharm(effects,sl))candidates.push({label:`錬金候補：${targetLabel(first)} Lv${x} / ${targetLabel(second)} Lv${y}`,effects,slots:sl,source:'傀異錬金術・覇気',generated:true,legal:true});}
-    }
-  }
+  // Recommended talismans intentionally use only ONE target skill.
+  // A technically legal two-skill talisman can be extremely low-probability;
+  // it is therefore not generated as a practical recommendation.
   // Prefer candidates that remove more deficit, then more slots. Cap to keep iPhone search bounded.
   candidates.sort((a,b)=>{const da=Object.values(need(merge(armorSkills,a.effects),t)).reduce((x,y)=>x+y,0),db=Object.values(need(merge(armorSkills,b.effects),t)).reduce((x,y)=>x+y,0);return da-db||slotScore(b.slots)-slotScore(a.slots)});
   out.push(...candidates.slice(0,80));
@@ -130,7 +126,7 @@ function qPlan(armor,t,ch,slots){
   return {plans,skills:qs,deco,complete:deco.done,deficit:deco.remaining};
 }
 function metric(st,ch,t,dec,q){const fs=merge(st.skills,ch.effects);const completion=fulfilled(fs,t);const slots=slotScore([...st.slots,...ch.slots,...getWeaponSlots()]);const open=maxSlot([...st.slots,...ch.slots,...getWeaponSlots()]);const deficit=Object.values(need(fs,t)).reduce((a,b)=>a+b,0);const qCount=q?.plans?.length||0;const illegalCharm=ch.legal===false?1:0;const legalQ=(q?.plans||[]).filter(x=>x.legal===false).length;return{completion,slots,open,deficit,qCount,illegalCharm,legalQ,score:completion*100000+slots*100+open*10-deficit*20-qCount*3-illegalCharm*1000000-legalQ*1000000}}
-function renderResult(r,t,rank){const final=merge(merge(r.armorSkills,r.charm.effects),r.qplan?.skills||{});const needAfter=need(final,t);const metric=r.metric;return `<section class="card result"><h2>候補 #${rank}</h2><div class="metric"><b>スキル充足度 ${Math.round(metric.completion*100)}%</b><span>スロット評価 ${metric.slots}</span><span>最大スロット ④${metric.open>=4?'あり':'なし'}</span><span>不足Lv ${Object.values(needAfter).reduce((a,b)=>a+b,0)}</span></div><div class="grid">${r.chosen.map(a=>`<div class="piece"><b>${a.part}</b> ${escapeHtml(a.name)}<br><span class="small">${a.rarity} / スロット ${a.slots.join('-')}</span></div>`).join('')}</div><div class="piece"><b>護石</b> ${escapeHtml(r.charm.label)}${r.charm.generated?' <span class="tag">錬金候補・合法条件</span>':''}${r.charm.legal===false?' <span class="tag badtag">指定値は錬金条件外</span>':''}<br><span class="small">${Object.entries(r.charm.effects).map(([k,v])=>targetLabel(k)+' +'+v).join(' / ')||'スキルなし'} / スロット ${r.charm.slots.join('-')}</span></div><h3>装飾品</h3>${r.deco.used?.length?r.deco.used.map(d=>`<span class="tag">${escapeHtml(d.name)} [${d.slot}]</span>`).join(''):'なし'}${r.qplan?.plans?.length?`<h3>錬成余地</h3>${r.qplan.plans.map(x=>`<div class="augmentPlan"><span class="tag">${escapeHtml(x.part)}：${escapeHtml(targetLabel(x.skill))} +1</span><span class="small">${escapeHtml(x.reason)}${x.compensation?`（補填必要 ${x.compensation}）`:''}</span></div>`).join('')}`:`<p class="small">傀異錬成予定なし</p>`}<h3>目標スキル</h3>${Object.entries(t).map(([k,v])=>`<span class="tag ${(final[k]||0)>=v?'oktag':'badtag'}">${targetLabel(k)} ${Math.min(v,final[k]||0)}/${v}</span>`).join('')}<p class="small">この順位は「スキル充足度 → スロット構成 → 護石で補える余地 → 錬成負担」の順で評価しています。</p></section>`}
+function renderResult(r,t,rank){const final=merge(merge(r.armorSkills,r.charm.effects),r.qplan?.skills||{});const needAfter=need(final,t);const metric=r.metric;return `<section class="card result"><h2>候補 #${rank}</h2><div class="metric"><b>スキル充足度 ${Math.round(metric.completion*100)}%</b><span>スロット評価 ${metric.slots}</span><span>最大スロット ④${metric.open>=4?'あり':'なし'}</span><span>不足Lv ${Object.values(needAfter).reduce((a,b)=>a+b,0)}</span></div><div class="grid">${r.chosen.map(a=>`<div class="piece"><b>${a.part}</b> ${escapeHtml(a.name)}<br><span class="small">${a.rarity} / スロット ${a.slots.join('-')}</span></div>`).join('')}</div><div class="piece"><b>護石</b> ${escapeHtml(r.charm.label)}${r.charm.generated?' <span class="tag">錬金候補・合法条件</span>':''}${r.charm.legal===false?' <span class="tag badtag">指定値は錬金条件外</span>':''}<br><span class="small">${Object.entries(r.charm.effects).map(([k,v])=>targetLabel(k)+' +'+v).join(' / ')||'スキルなし'} / スロット ${r.charm.slots.join('-')}</span></div><h3>装飾品</h3>${r.deco.used?.length?r.deco.used.map(d=>`<span class="tag">${escapeHtml(d.name)} [${d.slot}]</span>`).join(''):'なし'}${r.qplan?.plans?.length?`<h3>錬成余地</h3>${r.qplan.plans.map(x=>`<div class="augmentPlan"><span class="tag">${escapeHtml(x.part)}：${escapeHtml(targetLabel(x.skill))} +1</span><span class="small">${escapeHtml(x.reason)}${x.compensation?`（補填必要 ${x.compensation}）`:''}</span></div>`).join('')}`:`<p class="small">傀異錬成予定なし</p>`}<h3>目標スキル</h3>${Object.entries(t).map(([k,v])=>`<span class="tag ${(final[k]||0)>=v?'oktag':'badtag'}">${targetLabel(k)} ${Math.min(v,final[k]||0)}/${v}</span>`).join('')}<p class="small">この順位は「スキル充足度 → スロット構成 → 護石で補える余地 → 錬成負担」の順で評価。推奨護石は実用性を優先し、目標スキルは1個までです。</p></section>`}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function getWeaponSlots(){return[1,2,3].map(i=>Number(document.getElementById('weaponSlot'+i)?.value||0))}
 async function solve(){
