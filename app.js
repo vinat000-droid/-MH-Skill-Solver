@@ -44,34 +44,27 @@ function scoreDeco(d,rem){return d.effects.reduce((n,[k,v])=>n+(rem[k]>0?v:0),0)
 function skillNeed(base,t){const n={};for(const k of Object.keys(t))n[k]=Math.max(0,t[k]-(base[k]||0));return n}
 function slotsWithWeapon(slots){const w=+$('weaponSlot').value||0;return [...slots,...(w?[w]:[])]}
 function quriousPlans(chosen,baseSlots,baseSkills,need,t){
-  // 傀異錬成は「防具1部位につき1つのスキル付与候補」を部位ごとに扱う。
-  // 同じスキルを複数部位へ付与できる可能性を残し、旧版の
-  // 「スキルごとに+1を1回だけ」という誤った制約を撤廃する。
   const targetKeys=Object.keys(need).filter(k=>need[k]>0&&!Q_FORBIDDEN.has(k)&&Q_COST[k]);
-  const perPiece=chosen.map((a,i)=>{
-    const opts=[{piece:i,skill:null,level:0,cost:0}];
-    for(const k of targetKeys) opts.push({piece:i,skill:k,level:1,cost:Q_COST[k]});
-    return opts;
-  });
-  const results=[];
-  function rec(i,add,skills,cost){
-    if(i===perPiece.length){
-      const after=merge(baseSkills,skills);
-      const left=skillNeed(after,t);
-      const deco=fillDecos(baseSlots,left);
-      if(deco) results.push({skills:{...skills},plans:add.filter(x=>x.skill),deco,costUsed:cost});
-      return;
+  const used=new Set(), plans=[]; let skills={...baseSkills};
+  for(let round=0;round<chosen.length;round++){
+    let best=null,bestGain=0;
+    for(let i=0;i<chosen.length;i++){
+      if(used.has(i)) continue;
+      for(const k of targetKeys){
+        const before=Math.max(0,(t[k]||0)-(skills[k]||0));
+        if(before<=0) continue;
+        const gain=1/Q_COST[k];
+        if(gain>bestGain){bestGain=gain;best={piece:i,skill:k,level:1,cost:Q_COST[k]};}
+      }
     }
-    for(const o of perPiece[i]){
-      const ns={...skills};
-      if(o.skill) ns[o.skill]=(ns[o.skill]||0)+1;
-      rec(i+1,o.skill?[...add,o]:add,ns,cost+o.cost);
-      if(results.length>=24)return;
-    }
+    if(!best) break;
+    used.add(best.piece); plans.push(best); skills[best.skill]=(skills[best.skill]||0)+1;
   }
-  rec(0,[],{},0);
-  return results.sort((a,b)=>a.plans.length-b.plans.length||a.costUsed-b.costUsed).slice(0,12);
+  const add=skillsFromPlans(plans), after=merge(baseSkills,add), left=skillNeed(after,t), deco=fillDecos(baseSlots,left);
+  if(!deco)return [];
+  return [{skills:add,plans,deco,costUsed:plans.reduce((n,x)=>n+x.cost,0)}];
 }
+function skillsFromPlans(plans){const o={};for(const p of plans)o[p.skill]=(o[p.skill]||0)+p.level;return o}
 function qCostClass(a){return a.rarity>=10?10:a.rarity===9?12:18}
 function augmentFeasibility(armor,plans){return plans.map(p=>{const deficits=p.plans.map(x=>Math.max(0,x.cost-qCostClass(armor)));return {...p,baseCost:qCostClass(armor),deficits}})}
 function renderResult(r,t,rank){const q=r.qplan,charm=r.charm,finalSkills=merge(merge(r.armorSkills,charm.effects),q?.skills||{});return `<section class="card result"><h2>候補 #${rank}</h2><div class="grid">${r.chosen.map(a=>`<div class="piece"><b>${a.part}</b> ${escapeHtml(a.name)}<br><span class="small">${a.rarity} / スロット ${a.slots.join('-')}</span></div>`).join('')}</div><div class="piece"><b>護石</b> ${escapeHtml(charm.label)}<br><span class="small">${Object.entries(charm.effects).map(([k,v])=>targetLabel(k)+' +'+v).join(' / ')||'スキルなし'} / スロット ${charm.slots.join('-')}</span></div>${q?.plans?.length?`<h3>傀異錬成プラン</h3>${q.plans.map(x=>`<span class="tag">${targetLabel(x.skill)} +1 / コスト${x.cost}</span>`).join('')}<p class="small">部位ごとのスキル付与候補として探索。費用表示は検索優先度用で、実際の錬成結果の防御・耐性・スロット変動は別途ゲーム内で確認してください。</p>`:''}<h3>装飾品</h3>${r.deco.length?r.deco.map(d=>`<span class="tag">${escapeHtml(d.name)} [${d.slot}]</span>`).join(''):'なし'}<h3>目標スキル</h3>${Object.entries(t).map(([k,v])=>`<span class="tag ${(finalSkills[k]||0)>=v?'oktag':'badtag'}">${targetLabel(k)} ${Math.min(v,finalSkills[k]||0)}/${v}</span>`).join('')}<p class="small">※護石は入力した手持ち護石を固定。傀異錬成は部位単位で候補を探索します。</p></section>`}
@@ -83,13 +76,39 @@ function solve(){
   const decoMaxBySkill={};for(const d of state.decos)for(const[k,v]of d.effects)decoMaxBySkill[k]=Math.max(decoMaxBySkill[k]||0,v);
   const impossible=[];for(const k of Object.keys(t)){const armorMax=pools.reduce((sum,p)=>sum+Math.max(0,...p.map(a=>a.skills[k]||0)),0),charmMax=ch.effects[k]||0,qMax=Q_FORBIDDEN.has(k)?0:(allowQ?1:0),decoPossible=decoMaxBySkill[k]||0;if(armorMax+charmMax+qMax+decoPossible<t[k])impossible.push(k)}
   if(impossible.length){render([],t,0,pools,`現条件では達成不能: ${impossible.map(k=>targetLabel(k)).join(' / ')}`);return}
-  const remMax=Array.from({length:6},()=>({}));for(let i=4;i>=0;i--){const o={...(remMax[i+1]||{})};for(const k of Object.keys(t))o[k]=(o[k]||0)+Math.max(0,...pools[i].map(a=>a.skills[k]||0));remMax[i]=o}
-  let nodes=0,results=[];const memo=new Set(),decoCache=new Map();const slotsKey=xs=>[...xs].sort((a,b)=>b-a).join(',');
-  function decoFor(slots,need){const positive=Object.entries(need).filter(([,v])=>v>0);if(!positive.length)return [];const key=slotsKey(slots)+'|'+positive.map(([k,v])=>k+':'+v).join(',');if(decoCache.has(key))return decoCache.get(key);const z=fillDecos(slots,need)||null;decoCache.set(key,z);return z}
-  function prune(i,skills){for(const k of Object.keys(t)){const have=skills[k]||0;if(have>=t[k])continue;const optimistic=have+(remMax[i][k]||0)+(allowQ&&!Q_FORBIDDEN.has(k)?5:0);if(optimistic>=t[k])continue;if((decoMaxBySkill[k]||0)>0)continue;return true}return false}
-  function dfs(i,chosen,skills,slots){nodes++;if(nodes>250000)return true;if(prune(i,skills))return false;if(i===5){const base=merge(skills,ch.effects),need=skillNeed(base,t),allSlots=slotsWithWeapon([...slots,...ch.slots]),deco=decoFor(allSlots,need);if(deco){results.push({chosen,armorSkills:skills,charm:ch,deco,qplan:null});return results.length>=limit}if(!allowQ)return false;const qp=quriousPlans(chosen,allSlots,base,need,t);if(qp.length){const best=qp[0];results.push({chosen,armorSkills:skills,charm:ch,deco:best.deco,qplan:{...best,baseCost:0,deficits:[]}});return results.length>=limit}return false}
-    const stateKey=i+'|'+Object.keys(t).map(k=>Math.min(t[k],skills[k]||0)).join(',')+'|'+slotsKey(slots);if(memo.has(stateKey))return false;memo.add(stateKey);for(const a of pools[i]){const ns=merge(skills,a.skills),nslots=[...slots,...a.slots];if(dfs(i+1,[...chosen,a],ns,nslots))return true}return false}
-  dfs(0,[],{},[]);results=dedupe(results).slice(0,limit);render(results,t,nodes,pools,nodes>250000?'モバイル安全上限に到達しました。表示中の候補は確認済みのものです。':null)
+  const BEAM=1800; let nodes=0;
+  const slotsKey=xs=>[...xs].sort((a,b)=>b-a).join(',');
+  const slotScore=xs=>xs.reduce((n,x)=>n+(x>=4?4:x>=3?2:x>=2?1:0),0);
+  const stateScore=(skills,slots)=>Object.entries(t).reduce((n,[k,v])=>n+Math.min(v,skills[k]||0)*1000,0)+slotScore(slots)*4;
+  const decoCache=new Map();
+  function decoFor(slots,need){
+    const positive=Object.entries(need).filter(([,v])=>v>0); if(!positive.length)return [];
+    const key=slotsKey(slots)+'|'+positive.map(([k,v])=>k+':'+v).join(',');
+    if(decoCache.has(key))return decoCache.get(key);
+    const z=fillDecos(slots,need)||null; decoCache.set(key,z); return z;
+  }
+  let states=[{chosen:[],skills:{},slots:[]}];
+  for(let i=0;i<5;i++){
+    const next=[];
+    for(const st of states) for(const a of pools[i]){
+      nodes++; const ns=merge(st.skills,a.skills), nslots=[...st.slots,...a.slots];
+      next.push({chosen:[...st.chosen,a],skills:ns,slots:nslots});
+    }
+    next.sort((a,b)=>stateScore(b.skills,b.slots)-stateScore(a.skills,a.slots));
+    const seen=new Set(), kept=[];
+    for(const st of next){
+      const key=Object.keys(t).map(k=>Math.min(t[k],st.skills[k]||0)).join(',')+'|'+slotsKey(st.slots);
+      if(seen.has(key))continue; seen.add(key); kept.push(st); if(kept.length>=BEAM)break;
+    }
+    states=kept;
+  }
+  for(const st of states){
+    const base=merge(st.skills,ch.effects),need=skillNeed(base,t),allSlots=slotsWithWeapon([...st.slots,...ch.slots]);
+    const deco=decoFor(allSlots,need);
+    if(deco){results.push({chosen:st.chosen,armorSkills:st.skills,charm:ch,deco,qplan:null});if(results.length>=limit)break;continue;}
+    if(allowQ){const qp=quriousPlans(st.chosen,allSlots,base,need,t);if(qp.length){const best=qp[0];results.push({chosen:st.chosen,armorSkills:st.skills,charm:ch,deco:best.deco,qplan:best});if(results.length>=limit)break;}}
+  }
+    dfs(0,[],{},[]);results=dedupe(results).slice(0,limit);render(results,t,nodes,pools,nodes>250000?'モバイル安全上限に到達しました。表示中の候補は確認済みのものです。':null)
 }
 function scoreArmor(a,t){return Object.entries(t).reduce((n,[k,v])=>n+Math.min(v,a.skills[k]||0)*100,0)+a.slots.reduce((n,x)=>n+x,0)*2+a.rarity}
 function dedupe(rs){const s=new Set();return rs.filter(r=>{const k=r.chosen.map(x=>x.name).join('|')+'|'+r.deco.map(x=>x.name).join('|')+'|'+JSON.stringify(r.qplan?.plans||[]);if(s.has(k))return false;s.add(k);return true})}
