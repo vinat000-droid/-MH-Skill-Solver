@@ -7,3 +7,5 @@
 .weapon-slots{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .weapon-slots label{display:flex;flex-direction:column;gap:4px}
 .weapon-slots select{min-height:38px}
+
+.progressbar{height:7px;background:#2a2a2a;border-radius:99px;overflow:hidden;margin-top:10px}.progressbar i{display:block;height:100%;background:#888;transition:width .2s ease}
