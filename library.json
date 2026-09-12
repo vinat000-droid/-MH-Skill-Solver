@@ -1,8 +1,0 @@
-{
-  "name": "MHRSB Skill Solver Library",
-  "game": "Monster Hunter Rise: Sunbreak",
-  "version": "16.0",
-  "loader": "data/library-loader.js",
-  "rules": "data/rules.json",
-  "sources": "data/sources.json"
-}
