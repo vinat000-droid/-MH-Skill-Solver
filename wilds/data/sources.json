@@ -1,1 +1,7 @@
-
+{
+  "game": "Monster Hunter Wilds",
+  "provider": "MHDB Wilds",
+  "apiBase": "https://wilds.mhdb.io/en",
+  "endpoints": {"armor":"/armor","skills":"/skills","decorations":"/decorations","charms":"/charms"},
+  "notes": "Live API-backed database. This keeps Wilds data replaceable as title updates change the database. Solver must not treat unavailable randomized charm combinations as guaranteed drops."
+}
