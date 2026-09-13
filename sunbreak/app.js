@@ -144,6 +144,48 @@ function renderSkillPicker(){const root=$('skills');root.innerHTML='<div class="
   $('skillCategory').innerHTML='<option value="all">カテゴリ：すべて</option>'+[...new Set(state.skillsMeta.map(s=>s.category))].filter(Boolean).map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');const selected={};const renderSelected=()=>{$('selectedCount').textContent=Object.keys(selected).length?`（${Object.keys(selected).length}個）`:'';$('selectedSkills').innerHTML=Object.entries(selected).map(([k,v])=>{const max=k.startsWith('elementalAttack_')?5:(state.skillsMeta.find(x=>x.key===k)?.max||5);const info=skillInfoForKey(k).filter(x=>x.level===v);return `<div class="selectedRow"><span class="selectedName">${escapeHtml(targetLabel(k))}</span><select data-selected-key="${escapeHtml(k)}">${Array.from({length:max+1},(_,i)=>`<option value="${i}" ${i===v?'selected':''}>Lv${i}</option>`).join('')}</select>${MHSkillPopover.button(targetLabel(k),info)}<button type="button" class="removeSkill" data-remove-key="${escapeHtml(k)}">×</button></div>`}).join('')||'<p class="small">目標スキルはまだ選択されていません。</p>';$('selectedSkills').querySelectorAll('[data-selected-key]').forEach(e=>e.onchange=()=>{const v=+e.value;if(v)selected[e.dataset.selectedKey]=v;else delete selected[e.dataset.selectedKey];renderSelected()});$('selectedSkills').querySelectorAll('[data-remove-key]').forEach(e=>e.onclick=()=>{delete selected[e.dataset.removeKey];renderSelected()})};
   const addCandidates=()=>{const q=$('skillSearch').value.trim().toLowerCase(),cat=$('skillCategory').value;const elemental=ELEMENTS.map(([jp,id])=>({key:`elementalAttack_${id}`,name:`${jp}属性攻撃強化`,max:5,category:'属性'}));const all=[...elemental,...state.skillsMeta.filter(s=>!s.key.startsWith('elementalAttack_'))];const c=all.filter(s=>!selected[s.key]&&(!q||s.name.toLowerCase().includes(q))&&(cat==='all'||s.category===cat));$('skillList').innerHTML=c.slice(0,80).map(s=>`<div class="skillCandidate"><span class="candidateName">${escapeHtml(s.name)}</span><select class="candidateLevel" data-candidate-key="${escapeHtml(s.key)}">${Array.from({length:s.max+1},(_,i)=>`<option value="${i}" ${i===1?'selected':''}>Lv${i}</option>`).join('')}</select><button type="button" class="candidateAdd" data-add-key="${escapeHtml(s.key)}">追加</button></div>`).join('')||'<p class="small">該当するスキルがありません。</p>';$('skillList').querySelectorAll('.candidateAdd').forEach(e=>e.onclick=()=>{const k=e.dataset.addKey;const sel=$(`skillList`).querySelector(`[data-candidate-key="${CSS.escape(k)}"]`);selected[k]=Math.max(1,+(sel?.value||1));renderSelected();addCandidates()})};
   $('addSkillBtn').onclick=()=>{$('skillPickerPanel').classList.remove('hidden');$('skillSearch').focus();addCandidates()};$('closeSkillPicker').onclick=()=>$('skillPickerPanel').classList.add('hidden');$('skillSearch').oninput=addCandidates;$('skillCategory').onchange=addCandidates;renderSelected();window.__selectedTargets=()=>Object.fromEntries(Object.entries(selected).filter(([,v])=>v>0));window.__restoreTargets=(obj)=>{Object.keys(selected).forEach(k=>delete selected[k]);Object.entries(obj||{}).forEach(([k,v])=>{if(+v>0)selected[k]=+v});renderSelected()}}
+function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function getWeaponSlots(){return [1,2,3].map(i=>+($(`weaponSlot${i}`)?.value||0)).filter(Boolean)}
+function stateData(){return {targets:targets(),charmName:$('charmName')?.value||'',charmSkill1:$('charmSkill1')?.value||'',charmLv1:$('charmLv1')?.value||0,charmSkill2:$('charmSkill2')?.value||'',charmLv2:$('charmLv2')?.value||0,charmS1:$('charmS1')?.value||0,charmS2:$('charmS2')?.value||0,charmS3:$('charmS3')?.value||0,weapon:[1,2,3].map(i=>$(`weaponSlot${i}`)?.value||0),tier:$('tier')?.value||'mr',allowQurious:!!$('allowQurious')?.checked,limit:$('limit')?.value||'10'}}
+function saveCurrent(){if(!state.db||!window.MHStorage)return;MHStorage.save('sunbreak',stateData())}
+function loadCurrent(){if(!window.MHStorage)return false;const x=MHStorage.load('sunbreak');const d=x?.data;if(!d)return false;window.__restoreTargets?.(d.targets||{});for(const id of ['charmName','charmSkill1','charmLv1','charmSkill2','charmLv2','charmS1','charmS2','charmS3'])if($(id)&&d[id]!=null)$(id).value=d[id];for(let i=1;i<=3;i++)if($(`weaponSlot${i}`)&&d.weapon?.[i-1]!=null)$(`weaponSlot${i}`).value=d.weapon[i-1];if($('tier')&&d.tier)$('tier').value=d.tier;if($('allowQurious')&&d.allowQurious!=null)$('allowQurious').checked=!!d.allowQurious;if($('limit')&&d.limit)$('limit').value=d.limit;return true}
+function wirePersistence(){['saveBtn','loadBtn','clearSaveBtn'].forEach(id=>$(id)?.replaceWith($(id).cloneNode(true)));$('saveBtn')?.addEventListener('click',()=>saveCurrent());$('loadBtn')?.addEventListener('click',()=>loadCurrent());$('clearSaveBtn')?.addEventListener('click',()=>{MHStorage.clear('sunbreak');window.__restoreTargets?.({});});}
+function solve(){
+  const t=targets();
+  if(!Object.keys(t).length){$('status').className='card warn';$('status').innerHTML='<b>目標スキルを1つ以上選択してください。</b>';$('status').classList.remove('hidden');return;}
+  MHSearchUI.start();
+  try{
+    const mr=$('tier')?.value==='mr';
+    const parts=['head','chest','arms','waist','legs'];
+    const dbParts={head:state.db.head||[],chest:state.db.chest||[],arms:state.db.arms||[],waist:state.db.waist||[],legs:state.db.legs||[]};
+    const pools=parts.map(part=>dbParts[part].map(r=>armorRow(r,part)).filter(a=>!mr||a.rarity>=8));
+    if(pools.some(x=>!x.length))throw new Error('防具データが空です');
+    const rank=(a)=>{let v=0;for(const[k,n] of Object.entries(t))v+=Math.min(n,a.skills[k]||0)*100;v+=slotScore(a.slots);return v};
+    const trimmed=pools.map(p=>p.sort((a,b)=>rank(b)-rank(a)).slice(0,90));
+    MHSearchUI.step('①','防具構成を探索中',20);
+    let beams=[{chosen:[],skills:{},slots:[]}];let nodes=0;
+    for(let pi=0;pi<parts.length;pi++){
+      const next=[];
+      for(const st of beams){for(const a of trimmed[pi]){nodes++;next.push({chosen:[...st.chosen,a],skills:merge(st.skills,a.skills),slots:[...st.slots,...a.slots]});}}
+      next.sort((a,b)=>{const fa=fulfilled(a.skills,t),fb=fulfilled(b.skills,t);return fb-fa||slotScore(b.slots)-slotScore(a.slots)});
+      beams=next.slice(0,260);
+    }
+    MHSearchUI.step('②','スキル充足度・スロット構成を評価中',55);
+    const results=[];const weapon=getWeaponSlots();
+    for(const st of beams){
+      const charms=charmCandidates(t,st.skills);
+      for(const ch of charms){
+        const base=merge(st.skills,ch.effects);const deco=fillDecos([...st.slots,...ch.slots,...weapon],need(base,t));
+        let qplan={plans:[],skills:{},deco,complete:deco.done,deficit:deco.remaining};
+        if($('allowQurious')?.checked){qplan=qPlan({...st,chosen:st.chosen},t,ch,[...st.slots,...ch.slots,...weapon]);}
+        const dec=qplan.deco||deco;const final=merge(base,qplan.skills||{});const m=metric(st,ch,t,dec,qplan);results.push({chosen:st.chosen,armorSkills:st.skills,charm:ch,deco:dec,qplan,metric:m});
+      }
+    }
+    results.sort((a,b)=>b.metric.score-a.metric.score);
+    const unique=[];const seen=new Set();for(const r of results){const key=r.chosen.map(x=>x.name).join('|')+'||'+r.charm.label+'||'+r.charm.slots.join('-');if(seen.has(key))continue;seen.add(key);unique.push(r);if(unique.length>=Math.max(10,+$('limit')?.value||10))break;}
+    MHSearchUI.step('③','補完候補を評価中',90);render(unique,t,nodes,trimmed);saveCurrent();MHSearchUI.done();
+  }catch(e){MHSearchUI.error(e.message);$('status').className='card err';$('status').innerHTML='<b>検索エラー</b><p class="small">'+escapeHtml(e.message)+'</p>';$('status').classList.remove('hidden');console.error(e)}
+}
 ['charmName','charmSkill1','charmLv1','charmSkill2','charmLv2','charmS1','charmS2','charmS3','weaponSlot1','weaponSlot2','weaponSlot3','tier','allowQurious','limit'].forEach(id=>$(id)?.addEventListener('change',saveCurrent));
 $('solveBtn').onclick=solve;$('resetBtn').onclick=()=>location.reload();
 (async()=>{try{const db=await MHRSBLibrary.all((k,n)=>$('loadState').textContent=`${k} 読み込み完了（${n}件）`);state.db=db;state.decos=decos(db);state.skillsMeta=buildSkillMeta(db);renderSkillPicker();wirePersistence();const restored=loadCurrent();$('loadState').textContent=`データベース読み込み完了（スキル ${state.skillsMeta.length}種 / 装飾品 ${state.decos.length}種）${restored?' / 保存設定を復元済み':''}`;$('loadState').className='loading ok';$('solveBtn').disabled=false;$('solveBtn').textContent='検索する'}catch(e){$('loadState').textContent='データベース読み込み失敗: '+e.message;$('loadState').className='loading err'}})();
