@@ -17,14 +17,29 @@ function syncPickerLevel(){
  const current=Math.min(Number(lv.value)||1,max);
  lv.innerHTML=levelOptions(max,current);
 }
+function skillSearchText(skill){
+ const parts=[skill?.name,skill?.description,skill?.effect];
+ for(const r of (skill?.ranks||[])) parts.push(r?.description,r?.effect,r?.text);
+ return norm(parts.filter(Boolean).join(' ')).toLocaleLowerCase('ja');
+}
 function renderPicker(){
  const p=$('skillPicker');p.innerHTML='';
  const usable=W.skills.filter(x=>x && (x.kind==='armor'||x.kind==='set'||x.kind==='group'));
+ const search=document.createElement('input');search.id='skillSearch';search.type='search';search.placeholder='スキル名・効果で検索…';search.autocomplete='off';
  const sel=document.createElement('select');sel.id='skillSelect';
- sel.innerHTML='<option value="">スキルを選択…</option>'+usable.map(x=>`<option value="${x.id}">${norm(x.name)}</option>`).join('');
  const lv=document.createElement('select');lv.id='skillLevel';lv.innerHTML='<option value="1">Lv1</option>';
+ const b=document.createElement('button');b.textContent='＋追加';
+ function populate(filter=''){
+   const q=norm(filter).toLocaleLowerCase('ja');
+   const list=q?usable.filter(x=>skillSearchText(x).includes(q)):usable;
+   const prev=sel.value;
+   sel.innerHTML='<option value="">スキルを選択…</option>'+list.map(x=>`<option value="${x.id}">${norm(x.name)}</option>`).join('');
+   if(list.some(x=>String(x.id)===String(prev))) sel.value=prev;
+   syncPickerLevel();
+ }
  sel.onchange=syncPickerLevel;
- const b=document.createElement('button');b.textContent='＋追加';b.onclick=()=>{
+ search.oninput=()=>populate(search.value);
+ b.onclick=()=>{
    const id=+sel.value;if(!id)return;
    const sk=W.skills.find(x=>x.id===id);const max=skillMaxLevel(sk);const level=Math.min(Number(lv.value)||1,max);
    const existing=W.targets.find(t=>t.id===id);
@@ -32,7 +47,7 @@ function renderPicker(){
    else W.targets.push({id,name:sk.name,level});
    renderTargets();save();
  };
- p.append(sel,lv,b);
+ p.append(search,sel,lv,b);
 }
 function renderTargets(){
  const d=$('selectedSkills');
@@ -43,7 +58,7 @@ function renderTargets(){
    t.level=level;
    const info=wildsSkillInfo(t.name).filter(x=>x.level===level); return `<div class="selected-skill"><b>${norm(t.name)}</b><select data-i="${i}" class="targetLv">${levelOptions(max,level)}</select>${MHSkillPopover.button(norm(t.name),info)}<button data-i="${i}" class="removeTarget">削除</button></div>`;
  }).join('');
- document.querySelectorAll('.targetLv').forEach(e=>e.onchange=()=>{W.targets[+e.dataset.i].level=+e.value;save();});
+ document.querySelectorAll('.targetLv').forEach(e=>e.onchange=()=>{W.targets[+e.dataset.i].level=+e.value;renderTargets();save();});
  document.querySelectorAll('.removeTarget').forEach(e=>e.onclick=()=>{W.targets.splice(+e.dataset.i,1);renderTargets();save();});
 }
 function skillMap(items){const m=new Map();for(const x of items){if(!x?.skill?.name)continue;const k=norm(x.skill.name);m.set(k,(m.get(k)||0)+(+x.level||0));}return m;}
