@@ -18,7 +18,7 @@
 
   const gate = document.createElement('div');
   gate.id = 'mhAccessGate';
-  gate.innerHTML = '<div class="box"><h1>ACCESS RESTRICTED</h1><p>テスト利用者専用です。アクセスコードを入力してください。</p><input id="mhAccessCode" type="password" autocomplete="off" inputmode="text" aria-label="アクセスコード"><button id="mhAccessSubmit" type="button">入室する</button><div id="mhAccessError" class="error"></div></div>';
+  gate.innerHTML = '<div class="box"><h1>ACCESS RESTRICTED</h1><p>テスト利用者専用です。アクセスコードを入力してください。</p><input id="mhAccessCode" type="password" autocomplete="off" inputmode="text" aria-label="アクセスコード"><button id="mhAccessSubmit" type="button">認証</button><div id="mhAccessError" class="error"></div></div>';
   document.documentElement.appendChild(gate);
 
   const input = gate.querySelector('#mhAccessCode');
