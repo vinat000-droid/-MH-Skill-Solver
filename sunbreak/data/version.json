@@ -1,1 +1,9 @@
-{"game":"Monster Hunter Rise: Sunbreak","database":"RiseSim","mode":"existing-loader","notes":"Sunbreak database kept isolated from Wilds."}
+{
+  "game": "Monster Hunter Rise: Sunbreak",
+  "game_version": "16.0",
+  "locale": "ja",
+  "data_checked": "2026-09-13",
+  "source": "EXXXI/RiseSim",
+  "source_path": "src/SimModel/",
+  "status": "source-locked; data payload pending source archive"
+}
