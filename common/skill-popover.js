@@ -19,6 +19,6 @@
     document.getElementById('skillInfoBody').innerHTML=rows||'<p class="small">このスキルの効果データは登録されていません。</p>';
     m.classList.remove('hidden');
   }
-  window.MHSkillPopover={open,close,button:(name,levels)=>`<button type="button" class="skillInfoBtn" data-skill-info="${encodeURIComponent(JSON.stringify({name,levels}))}">ⓘ</button>`};
-  document.addEventListener('click',e=>{const b=e.target.closest('[data-skill-info]');if(!b)return;try{const x=JSON.parse(decodeURIComponent(b.dataset.skillInfo));open(x.name,x.levels)}catch(_){}});
+  window.MHSkillPopover={open,close,button:(name,levels)=>{const payload=encodeURIComponent(JSON.stringify({name,levels}));return `<button type="button" class="skillInfoBtn" data-skill-info="${payload}" aria-label="${esc(name)}の効果を表示">ⓘ</button>`;}};
+  document.addEventListener('click',e=>{const b=e.target instanceof Element ? e.target.closest('.skillInfoBtn[data-skill-info]') : null;if(!b)return;e.preventDefault();e.stopPropagation();try{const raw=b.getAttribute('data-skill-info')||'';const x=JSON.parse(decodeURIComponent(raw));open(x.name,x.levels||[]);}catch(err){console.error('skill info popup error',err);}},true);
 })();

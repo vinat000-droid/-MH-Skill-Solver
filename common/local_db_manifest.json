@@ -1,0 +1,24 @@
+{
+  "sunbreak": {
+    "source_repo": "https://github.com/EXXXI/RiseSim",
+    "data_base": "src/SimModel/",
+    "files": {
+      "skills.csv": "MHR_SKILL.csv",
+      "decorations.csv": "MHR_DECO.csv",
+      "armor_head.csv": "MHR_EQUIP_HEAD.csv",
+      "armor_body.csv": "MHR_EQUIP_BODY.csv",
+      "armor_arm.csv": "MHR_EQUIP_ARM.csv",
+      "armor_waist.csv": "MHR_EQUIP_WST.csv",
+      "armor_leg.csv": "MHR_EQUIP_LEG.csv"
+    }
+  },
+  "wilds": {
+    "source_api": "https://wilds.mhdb.io/ja",
+    "files": [
+      "skills.json",
+      "armor.json",
+      "decorations.json",
+      "charms.json"
+    ]
+  }
+}
