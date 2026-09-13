@@ -41,7 +41,7 @@ function renderTargets(){
    const max=skillMaxLevel(sk);
    const level=Math.min(Number(t.level)||1,max);
    t.level=level;
-   return `<div class="selected-skill"><b>${norm(t.name)}</b><select data-i="${i}" class="targetLv">${levelOptions(max,level)}</select><button data-i="${i}" class="removeTarget">削除</button></div>`;
+   const info=wildsSkillInfo(t.name).filter(x=>x.level===level); return `<div class="selected-skill"><b>${norm(t.name)}</b><select data-i="${i}" class="targetLv">${levelOptions(max,level)}</select>${MHSkillPopover.button(norm(t.name),info)}<button data-i="${i}" class="removeTarget">削除</button></div>`;
  }).join('');
  document.querySelectorAll('.targetLv').forEach(e=>e.onchange=()=>{W.targets[+e.dataset.i].level=+e.value;save();});
  document.querySelectorAll('.removeTarget').forEach(e=>e.onclick=()=>{W.targets.splice(+e.dataset.i,1);renderTargets();save();});
@@ -83,10 +83,18 @@ function allActiveSkills(set, decorations){
  }
  return [...m.entries()].sort((a,b)=>a[0].localeCompare(b[0],'ja'));
 }
+function wildsSkillInfo(name){
+ const sk=W.skills.find(x=>norm(x.name)===norm(name));
+ if(!sk)return [];
+ const ranks=(sk.ranks||[]).map(r=>({level:Number(r.level)||0,effect:r.description||r.effect||r.text||''})).filter(x=>x.level&&x.effect);
+ if(ranks.length)return ranks;
+ const base=sk.description||sk.effect||'';
+ return base?[{level:1,effect:base}]:[];
+}
 function renderAllActiveSkills(set, decorations){
  const list=allActiveSkills(set,decorations);
  if(!list.length)return '<div class="small">発動スキルなし</div>';
- return `<details open class="active-skills"><summary>発動スキル（${list.length}種）</summary><div class="skill-list">${list.map(([name,lv])=>`<div><span>${name}</span><b>Lv${lv}</b></div>`).join('')}</div></details>`;
+ return `<details open class="active-skills"><summary>発動スキル（${list.length}種）</summary><div class="skill-list">${list.map(([name,lv])=>`<div class="active-skill-line"><span>${name} Lv${lv}</span>${MHSkillPopover.button(name,wildsSkillInfo(name))}</div>`).join('')}</div></details>`;
 }
 function renderResults(cands){
  const r=$('results');
