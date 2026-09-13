@@ -18,7 +18,8 @@ function syncPickerLevel(){
  lv.innerHTML=levelOptions(max,current);
 }
 function skillSearchText(skill){
- const parts=[skill?.name,skill?.description,skill?.effect];
+ const local=(window.WILDS_SKILL_DETAILS||{})[norm(skill?.name)]||{};
+ const parts=[skill?.name,skill?.description,skill?.effect,local.description,...(local.levels||[]).flatMap(r=>[r?.effect,r?.description,r?.text])];
  for(const r of (skill?.ranks||[])) parts.push(r?.description,r?.effect,r?.text);
  return norm(parts.filter(Boolean).join(' ')).toLocaleLowerCase('ja');
 }
@@ -100,10 +101,11 @@ function allActiveSkills(set, decorations){
 }
 function wildsSkillInfo(name){
  const sk=W.skills.find(x=>norm(x.name)===norm(name));
- if(!sk)return [];
+ const local=(window.WILDS_SKILL_DETAILS||{})[norm(name)]||{};
+ if(!sk)return local.levels||[];
  const ranks=(sk.ranks||[]).map(r=>({level:Number(r.level)||0,effect:r.description||r.effect||r.text||''})).filter(x=>x.level&&x.effect);
- if(ranks.length)return ranks;
- const base=sk.description||sk.effect||'';
+ if(ranks.length){const localByLevel=new Map((local.levels||[]).map(x=>[Number(x.level),x.effect]));return ranks.map(x=>localByLevel.has(x.level)?{...x,effect:localByLevel.get(x.level)}:x);}
+ const base=local.description||sk.description||sk.effect||'';
  return base?[{level:1,effect:base}]:[];
 }
 function renderAllActiveSkills(set, decorations){
