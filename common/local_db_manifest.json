@@ -10,7 +10,17 @@
       "armor_arm.csv": "MHR_EQUIP_ARM.csv",
       "armor_waist.csv": "MHR_EQUIP_WST.csv",
       "armor_leg.csv": "MHR_EQUIP_LEG.csv"
-    }
+    },
+    "runtime": "bundled CSV (same-origin; no external DB request)",
+    "bundle_files": [
+      "skills.csv",
+      "decorations.csv",
+      "armor_head.csv",
+      "armor_body.csv",
+      "armor_arm.csv",
+      "armor_waist.csv",
+      "armor_leg.csv"
+    ]
   },
   "wilds": {
     "source_api": "https://wilds.mhdb.io/ja",

@@ -1,22 +1,16 @@
-MH Skill Solver v24 - local DB package
+MH Skill Solver v25 - bundled local DB package
 
-This build is structured for zero external DB access at runtime.
+Sunbreak DB is bundled in this release and loaded from the same /sunbreak/data/ directory.
+No external database request is used at runtime for Sunbreak.
 
-Sunbreak source files:
-  MHR_SKILL.csv
-  MHR_DECO.csv
-  MHR_EQUIP_HEAD.csv
-  MHR_EQUIP_BODY.csv
-  MHR_EQUIP_ARM.csv
-  MHR_EQUIP_WST.csv
-  MHR_EQUIP_LEG.csv
+Bundled Sunbreak source payloads:
+  skills.csv
+  decorations.csv
+  armor_head.csv
+  armor_body.csv
+  armor_arm.csv
+  armor_waist.csv
+  armor_leg.csv
 
-Wilds source endpoints:
-  /ja/skills
-  /ja/armor
-  /ja/decorations
-  /ja/charms
-
-The source payloads are not fabricated. They must be populated from the
-source archives/API snapshot before this package can truthfully be called
-the fully data-complete offline build.
+The CSV contents are snapshots of the RiseSim Sunbreak data used for this build.
+Wilds remains on its separate live API architecture.
