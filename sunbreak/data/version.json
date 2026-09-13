@@ -5,5 +5,7 @@
   "data_checked": "2026-09-13",
   "source": "EXXXI/RiseSim",
   "source_path": "src/SimModel/",
-  "status": "source-locked; data payload pending source archive"
+  "status": "bundled-local-db",
+  "release": "v25",
+  "runtime_source": "./sunbreak/data/*.csv"
 }
