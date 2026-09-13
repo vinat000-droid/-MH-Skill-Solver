@@ -57,7 +57,7 @@ function renderTargets(){
    const max=skillMaxLevel(sk);
    const level=Math.min(Number(t.level)||1,max);
    t.level=level;
-   const info=wildsSkillInfo(t.name).filter(x=>x.level===level); return `<div class="selected-skill"><b>${norm(t.name)}</b><select data-i="${i}" class="targetLv">${levelOptions(max,level)}</select>${MHSkillPopover.button(norm(t.name),info)}<button data-i="${i}" class="removeTarget">削除</button></div>`;
+   const fullInfo=wildsSkillInfo(t.name); const info={...fullInfo,levels:(fullInfo.levels||[]).filter(x=>x.level===level)}; return `<div class="selected-skill"><b>${norm(t.name)}</b><select data-i="${i}" class="targetLv">${levelOptions(max,level)}</select>${MHSkillPopover.button(norm(t.name),info)}<button data-i="${i}" class="removeTarget">削除</button></div>`;
  }).join('');
  document.querySelectorAll('.targetLv').forEach(e=>e.onchange=()=>{W.targets[+e.dataset.i].level=+e.value;renderTargets();save();});
  document.querySelectorAll('.removeTarget').forEach(e=>e.onclick=()=>{W.targets.splice(+e.dataset.i,1);renderTargets();save();});
@@ -102,11 +102,12 @@ function allActiveSkills(set, decorations){
 function wildsSkillInfo(name){
  const sk=W.skills.find(x=>norm(x.name)===norm(name));
  const local=(window.WILDS_SKILL_DETAILS||{})[norm(name)]||{};
- if(!sk)return local.levels||[];
+ const description=local.description||sk?.description||sk?.effect||'';
+ if(!sk)return {name,description,levels:local.levels||[]};
  const ranks=(sk.ranks||[]).map(r=>({level:Number(r.level)||0,effect:r.description||r.effect||r.text||''})).filter(x=>x.level&&x.effect);
- if(ranks.length){const localByLevel=new Map((local.levels||[]).map(x=>[Number(x.level),x.effect]));return ranks.map(x=>localByLevel.has(x.level)?{...x,effect:localByLevel.get(x.level)}:x);}
- const base=local.description||sk.description||sk.effect||'';
- return base?[{level:1,effect:base}]:[];
+ if(ranks.length){const localByLevel=new Map((local.levels||[]).map(x=>[Number(x.level),x.effect]));return {name,description,levels:ranks.map(x=>localByLevel.has(x.level)?{...x,effect:localByLevel.get(x.level)}:x)};}
+ const base=description;
+ return {name,description,levels:base?[{level:1,effect:base}]:[]};
 }
 function renderAllActiveSkills(set, decorations){
  const list=allActiveSkills(set,decorations);
