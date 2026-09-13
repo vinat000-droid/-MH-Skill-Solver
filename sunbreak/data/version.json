@@ -7,5 +7,9 @@
   "source_path": "src/SimModel/",
   "status": "bundled-local-db",
   "release": "v25",
-  "runtime_source": "./sunbreak/data/*.csv"
+  "runtime_source": "./sunbreak/data/*.csv",
+  "version": "25",
+  "sunbreak_db": "embedded",
+  "db_source": "bundled-local",
+  "updated": "2026-09-13"
 }
