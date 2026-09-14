@@ -36,7 +36,13 @@ function bonusLevel(armor,target,kind){
 }
 function targetTotal(){return [...W.targets,...W.setTargets,...W.groupTargets].reduce((s,t)=>s+Number(t.level||0),0);}
 function flattenCharms(){const out=[{id:'none',name:'護石なし',skills:[],source:null}];for(const c of W.charms){if(c?.randomized)continue;for(const r of (c.ranks||[])){if(!(r.skills||[]).length)continue;out.push({id:`${c.id}:${r.id}`,name:r.name||c.name||`護石${c.id}`,skills:r.skills,source:c,rank:r});}}return out;}
-function armorSetMeta(a){return a?.armorSet||null;}
+function armorSetMeta(a){
+  const ref=a?.armorSet;
+  if(!ref)return null;
+  if(ref.setBonusSkill||ref.groupBonusSkill)return ref;
+  const id=ref.id??ref.gameId;
+  return W.armorSets.find(x=>String(x?.id??x?.gameId)===String(id))||ref;
+}
 function bonusSkillForArmor(a,kind){const s=armorSetMeta(a)?.[kind==='set'?'setBonusSkill':'groupBonusSkill'];return s||null;}
 function armorIdentity(a){return String(a?.id??a?.gameId??a?._id??`${a?.kind}:${a?.name}`);}
 function setIdentity(a){const meta=armorSetMeta(a);return String(meta?.id??meta?.gameId??meta?.name??'');}
@@ -174,9 +180,16 @@ function wildsSkillInfo(name){const sk=W.skills.find(x=>norm(x.name)===norm(name
 function actualBonusSkills(armor,kind){const result=new Map();if(kind==='group'){for(const a of armor){const b=bonusSkillForArmor(a,'group');const n=norm(b?.name);if(n)result.set(n,(result.get(n)||0)+1);}return result;}
   const bySkillSet=new Map();for(const a of armor){const b=bonusSkillForArmor(a,'set');const n=norm(b?.name);const sid=setIdentity(a);if(!n||!sid)continue;if(!bySkillSet.has(n))bySkillSet.set(n,new Map());const m=bySkillSet.get(n);m.set(sid,(m.get(sid)||0)+1);}
   for(const [name,counts] of bySkillSet){const sk=W.skills.find(s=>norm(s.name)===name);let max=0;for(const pieces of counts.values())for(const r of (sk?.ranks||[])){if(Number(r.setPiecesRequired)&&pieces>=Number(r.setPiecesRequired))max=Math.max(max,Number(r.level)||0);}if(max)result.set(name,max);}return result;}
-function allActiveSkills(c){const m=new Map();for(const x of [c.weapon,c.charm,...c.armor])for(const s of (x?.skills||[])){const n=norm(s.skill?.name);if(n)m.set(n,(m.get(n)||0)+(Number(s.level)||0));}for(const d of findDecorationObjects(c.decos))for(const s of (d.skills||[])){const n=norm(s.skill?.name);if(n)m.set(n,(m.get(n)||0)+(Number(s.level)||0));}
-  const set=actualBonusSkills(c.armor,'set');for(const [n,lv] of set)m.set(n,Math.max(m.get(n)||0,lv));const group=actualBonusSkills(c.armor,'group');for(const [n,pieces] of group){const sk=W.skills.find(s=>norm(s.name)===n);let lv=0;for(const r of (sk?.ranks||[])){if(Number(r.setPiecesRequired)&&pieces>=Number(r.setPiecesRequired))lv=Math.max(lv,Number(r.level)||0);}if(lv)m.set(n,Math.max(m.get(n)||0,lv));}
-  return [...m.entries()].sort((a,b)=>a[0].localeCompare(b[0],'ja'));}
+function allActiveSkills(c){
+  const free=new Set(c.freeParts||[]);
+  const fixedArmor=c.armor.filter(a=>!free.has(a?.kind));
+  const m=new Map();
+  for(const x of [c.weapon,c.charm,...fixedArmor])for(const s of (x?.skills||[])){const n=norm(s.skill?.name);if(n)m.set(n,(m.get(n)||0)+(Number(s.level)||0));}
+  for(const d of findDecorationObjects(c.decos))for(const s of (d.skills||[])){const n=norm(s.skill?.name);if(n)m.set(n,(m.get(n)||0)+(Number(s.level)||0));}
+  const set=actualBonusSkills(fixedArmor,'set');for(const [n,lv] of set)m.set(n,Math.max(m.get(n)||0,lv));
+  const group=actualBonusSkills(fixedArmor,'group');for(const [n,pieces] of group){const sk=W.skills.find(s=>norm(s.name)===n);let lv=0;for(const r of (sk?.ranks||[])){if(Number(r.setPiecesRequired)&&pieces>=Number(r.setPiecesRequired))lv=Math.max(lv,Number(r.level)||0);}if(lv)m.set(n,Math.max(m.get(n)||0,lv));}
+  return [...m.entries()].sort((a,b)=>a[0].localeCompare(b[0],'ja'));
+}
 function renderAllActiveSkills(c){const list=allActiveSkills(c);return `<details open class="active-skills"><summary>発動スキル（${list.length}種）</summary><div class="skill-list">${list.map(([name,lv])=>`<div class="active-skill-line"><span>${esc(name)} Lv${lv}</span>${MHSkillPopover.button(name,wildsSkillInfo(name))}</div>`).join('')}</div></details>`;}
 function renderResults(cands,meta){const r=$('results');if(!cands.length){$('status').classList.remove('hidden');$('status').textContent='候補なし';r.innerHTML='';return;}$('status').classList.remove('hidden');$('status').textContent=`検索 ${meta.evaluated.toLocaleString()}件を評価${meta.stopped?'（探索上限または時間上限で打ち切り）':''}`;r.innerHTML=cands.map((c,i)=>`<section class="card result"><h3>#${i+1} 目標充足 ${c.sat}/${c.total}</h3><div><b>武器:</b> ${esc(c.weapon.name)}</div>${c.charm?.source?`<div><b>護石:</b> ${esc(c.charm.name)}</div>`:'<div><b>護石:</b> なし</div>'}<div>${PARTS.map(part=>{if(c.freeParts?.includes(part))return `<div>${PART_LABEL[part]}: <b>フリー</b></div>`;const a=c.armor.find(x=>x?.kind===part);return `<div>${PART_LABEL[part]}: ${esc(a?.name||'—')}</div>`;}).join('')}</div>${renderAllActiveSkills(c)}<div class="small">装飾品: ${c.decos.length?c.decos.map(d=>`${esc(d.name)}×1`).join(' / '):'なし'}</div>${c.remaining.length?`<div class="warn">目標不足: ${c.remaining.map(x=>esc(x.name)+' Lv'+x.need).join(' / ')}</div>`:'<div class="ok">目標スキル充足</div>'}</section>`).join('');}
 async function fetchJSON(path){const r=await fetch(API+path);if(!r.ok)throw new Error(`${path} HTTP ${r.status}`);return r.json();}
