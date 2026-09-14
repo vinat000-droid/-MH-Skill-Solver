@@ -22,7 +22,19 @@ function slots(item){return (item?.slots||[]).map(Number).filter(Boolean).sort((
 function fitsDecoration(slot,d){return Number(d.slot)<=slot;}
 function uniqueSkillNames(targets){return [...new Set(targets.map(t=>norm(t.name)))];}
 function scoreItem(item,targets){const m=itemSkills(item);let sat=0;for(const t of targets)sat+=Math.min(Number(t.level)||0,m.get(norm(t.name))||0);return sat;}
-function targetTotal(){return W.targets.reduce((s,t)=>s+Number(t.level||0),0);}
+function bonusLevel(armor,target,kind){
+  const sk=W.skills.find(x=>x.id===target.id); const reqLevel=Number(target.level)||0;
+  if(!sk||!reqLevel)return 0;
+  if(kind==='group'){
+    const pieces=armorBonusPieces(armor,'group',target.name);
+    let lv=0; for(const r of (sk.ranks||[])) if(Number(r.setPiecesRequired)&&pieces>=Number(r.setPiecesRequired)) lv=Math.max(lv,Number(r.level)||0);
+    return lv;
+  }
+  const pieces=armorBonusPieces(armor,'set',target.name);
+  let lv=0; for(const r of (sk.ranks||[])) if(Number(r.setPiecesRequired)&&pieces>=Number(r.setPiecesRequired)) lv=Math.max(lv,Number(r.level)||0);
+  return lv;
+}
+function targetTotal(){return [...W.targets,...W.setTargets,...W.groupTargets].reduce((s,t)=>s+Number(t.level||0),0);}
 function flattenCharms(){const out=[{id:'none',name:'護石なし',skills:[],source:null}];for(const c of W.charms){if(c?.randomized)continue;for(const r of (c.ranks||[])){if(!(r.skills||[]).length)continue;out.push({id:`${c.id}:${r.id}`,name:r.name||c.name||`護石${c.id}`,skills:r.skills,source:c,rank:r});}}return out;}
 function armorSetMeta(a){return a?.armorSet||null;}
 function bonusSkillForArmor(a,kind){const s=armorSetMeta(a)?.[kind==='set'?'setBonusSkill':'groupBonusSkill'];return s||null;}
@@ -30,7 +42,13 @@ function armorIdentity(a){return String(a?.id??a?.gameId??a?._id??`${a?.kind}:${
 function setIdentity(a){const meta=armorSetMeta(a);return String(meta?.id??meta?.gameId??meta?.name??'');}
 function armorBonusPieces(armor,kind,name){const key=norm(name);if(kind==='group')return armor.reduce((n,a)=>n+(norm(bonusSkillForArmor(a,'group')?.name)===key?1:0),0);const bySet=new Map();for(const a of armor){if(norm(bonusSkillForArmor(a,'set')?.name)!==key)continue;const sid=setIdentity(a);if(sid)bySet.set(sid,(bySet.get(sid)||0)+1);}return Math.max(0,...bySet.values());}
 function armorBonusSatisfied(armor,targets,kind){for(const t of targets){const sk=W.skills.find(x=>x.id===t.id);const req=setGroupRequired(sk,t.level);if(req&&armorBonusPieces(armor,kind,t.name)<req)return false;}return true;}
-function armorCandidateScore(st){let s=0;for(const t of W.targets)s+=Math.min(Number(t.level)||0,st.skills.get(norm(t.name))||0);return s*100+st.slotSum;}
+function armorCandidateScore(st){
+  let s=0;
+  for(const t of W.targets)s+=Math.min(Number(t.level)||0,st.skills.get(norm(t.name))||0);
+  for(const t of W.setTargets)s+=Math.min(Number(t.level)||0,bonusLevel(st.set,t,'set'))*20;
+  for(const t of W.groupTargets)s+=Math.min(Number(t.level)||0,bonusLevel(st.set,t,'group'))*20;
+  return s*100+st.slotSum;
+}
 function armorCandidates(){
   const byKind={};for(const p of PARTS)byKind[p]=W.armor.filter(a=>a?.kind===p);
   const bonusNames=new Set([...W.setTargets,...W.groupTargets].map(t=>norm(t.name)));
@@ -111,9 +129,14 @@ function evaluateCombo(weapon,armor,charm){
   const base=mergeMaps([itemSkills(weapon),...armor.map(itemSkills),itemSkills(charm)]);
   const deco=fillDecorations(slots(weapon),armor.flatMap(slots),base);
   const final=activeSkillMap(weapon,armor,charm,findDecorationObjects(deco.used));
-  const rem=W.targets.map(t=>({name:norm(t.name),need:Math.max(0,Number(t.level)-(final.get(norm(t.name))||0))})).filter(x=>x.need>0);
-  const sat=W.targets.reduce((s,t)=>s+Math.min(Number(t.level),final.get(norm(t.name))||0),0);
-  return {weapon,armor,charm,decos:deco.used,remaining:rem,skills:final,sat,total:targetTotal(),slotScore:deco.weaponLeft.reduce((s,x)=>s+x,0)+deco.armorLeft.reduce((s,x)=>s+x,0)};
+  const normalRem=W.targets.map(t=>({name:norm(t.name),need:Math.max(0,Number(t.level)-(final.get(norm(t.name))||0))})).filter(x=>x.need>0);
+  const setRem=W.setTargets.map(t=>({name:norm(t.name),need:Math.max(0,Number(t.level)-bonusLevel(armor,t,'set'))})).filter(x=>x.need>0);
+  const groupRem=W.groupTargets.map(t=>({name:norm(t.name),need:Math.max(0,Number(t.level)-bonusLevel(armor,t,'group'))})).filter(x=>x.need>0);
+  const remaining=[...normalRem,...setRem,...groupRem];
+  const sat=W.targets.reduce((s,t)=>s+Math.min(Number(t.level),final.get(norm(t.name))||0),0)
+    +W.setTargets.reduce((s,t)=>s+Math.min(Number(t.level),bonusLevel(armor,t,'set')),0)
+    +W.groupTargets.reduce((s,t)=>s+Math.min(Number(t.level),bonusLevel(armor,t,'group')),0);
+  return {weapon,armor,charm,decos:deco.used,remaining,skills:final,sat,total:targetTotal(),slotScore:deco.weaponLeft.reduce((s,x)=>s+x,0)+deco.armorLeft.reduce((s,x)=>s+x,0)};
 }
 function pairScore(w,c){return scoreItem(w,W.targets)+scoreItem(c,W.targets);}
 function makeWeaponCharmPairs(){
@@ -138,8 +161,9 @@ async function makeCandidates(progress){
       // Fast lower-bound pruning: if equipment already reaches every target, no decoration search is needed.
       const base=mergeMaps([st.skills,itemSkills(pair.w),itemSkills(pair.c)]);
       let baseSat=0;for(const t of W.targets)baseSat+=Math.min(Number(t.level),base.get(norm(t.name))||0);
+      let bonusSat=0;for(const t of W.setTargets)bonusSat+=Math.min(Number(t.level),bonusLevel(st.set,t,'set'));for(const t of W.groupTargets)bonusSat+=Math.min(Number(t.level),bonusLevel(st.set,t,'group'));
       const c=collapseFreeArmor(evaluateCombo(pair.w,st.set,pair.c));evaluated++;
-      if(c.sat===total||out.length<LIMITS.maxResults||baseSat>=Math.max(0,total-2)){out.push(c);out.sort(rankCandidate);if(out.length>LIMITS.maxResults)out.pop();}
+      if(c.sat===total||out.length<LIMITS.maxResults||baseSat+bonusSat>=Math.max(0,total-2)){out.push(c);out.sort(rankCandidate);if(out.length>LIMITS.maxResults)out.pop();}
       if(evaluated%500===0){const pct=45+Math.min(50,Math.round(evaluated/Math.max(1,Math.min(estimated,maxEval))*50));progress('③',`候補を探索中 ${evaluated.toLocaleString()}件 / 推定 ${estimated.toLocaleString()}件`,pct);await yieldUI();}
     }
   }
@@ -160,6 +184,8 @@ async function loadDB(){try{const [armor,armorSets,weapons,skills,deco,charms]=a
 function stateData(){return {targets:W.targets,setTargets:W.setTargets,groupTargets:W.groupTargets};}
 function save(){MHStorage.save('wilds',stateData());}
 function restore(d){W.targets=d.targets||[];W.setTargets=d.setTargets||[];W.groupTargets=d.groupTargets||[];renderTargets();}
-$('solveBtn').onclick=async()=>{if(!W.loaded||(!W.targets.length&&!W.setTargets.length&&!W.groupTargets.length)){ $('status').classList.remove('hidden');$('status').textContent='目標スキルを1つ以上選択してください。';return;}$('solveBtn').disabled=true;MHSearchUI.start();try{MHSearchUI.step('①','防具候補を枝刈り探索中',15);await yieldUI();const meta=await makeCandidates((n,t,p)=>MHSearchUI.step(n,t,p));renderResults(meta.candidates,meta);save();MHSearchUI.done(meta.stopped?'探索上限に達したため打ち切りました':'検索完了');}catch(e){console.error(e);MHSearchUI.error(e.message||String(e));$('status').classList.remove('hidden');$('status').textContent='検索エラー: '+(e.message||e);}finally{$('solveBtn').disabled=false;}};
+$('solveBtn').onclick=async()=>{
+  if(!W.loaded||(!W.targets.length&&!W.setTargets.length&&!W.groupTargets.length)){$('status').classList.remove('hidden');$('status').textContent='目標スキルを1つ以上選択してください。';return;}
+  if(!W.targets.length&&!W.setTargets.length&&W.groupTargets.length){$('status').classList.remove('hidden');$('status').textContent='グループスキルだけでは検索できません。通常スキルまたはシリーズスキルを1つ以上指定してください。';return;}$('solveBtn').disabled=true;MHSearchUI.start();try{MHSearchUI.step('①','防具候補を枝刈り探索中',15);await yieldUI();const meta=await makeCandidates((n,t,p)=>MHSearchUI.step(n,t,p));renderResults(meta.candidates,meta);save();MHSearchUI.done(meta.stopped?'探索上限に達したため打ち切りました':'検索完了');}catch(e){console.error(e);MHSearchUI.error(e.message||String(e));$('status').classList.remove('hidden');$('status').textContent='検索エラー: '+(e.message||e);}finally{$('solveBtn').disabled=false;}};
 $('saveBtn').onclick=save;$('loadBtn').onclick=()=>{const x=MHStorage.load('wilds');if(x?.data)restore(x.data);};$('clearSaveBtn').onclick=()=>{MHStorage.clear('wilds');W.targets=[];W.setTargets=[];W.groupTargets=[];renderTargets();};
 loadDB();
