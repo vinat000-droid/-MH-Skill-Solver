@@ -1,7 +1,7 @@
 {
   "game": "Monster Hunter Wilds",
   "locale": "ja",
-  "data_checked": "2026-09-13",
-  "source": "MHDB / EXXXI/WildsSim",
-  "status": "source-locked; data payload pending source archive"
+  "data_checked": "2026-09-14",
+  "source": "MHDB Wilds API + GameWith supplemental skill details",
+  "status": "solver-integrated: weapons, armor, decorations, charms, series/group targets"
 }

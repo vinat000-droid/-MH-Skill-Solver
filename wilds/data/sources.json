@@ -1,7 +1,21 @@
 {
   "game": "Monster Hunter Wilds",
   "provider": "MHDB Wilds",
-  "apiBase": "https://wilds.mhdb.io/en",
-  "endpoints": {"armor":"/armor","skills":"/skills","decorations":"/decorations","charms":"/charms"},
-  "notes": "Live API-backed database. This keeps Wilds data replaceable as title updates change the database. Solver must not treat unavailable randomized charm combinations as guaranteed drops."
+  "apiBase": "https://wilds.mhdb.io/ja",
+  "endpoints": {
+    "armor": "/armor",
+    "armorSets": "/armor/sets",
+    "weapons": "/weapons",
+    "skills": "/skills",
+    "decorations": "/decorations",
+    "charms": "/charms"
+  },
+  "solverModel": {
+    "normalSkills": ["armor", "weapon"],
+    "setSkills": ["set"],
+    "groupSkills": ["group"],
+    "sources": ["weapon", "armor", "charm", "decoration", "armorSetBonus", "armorGroupBonus"],
+    "artian": "base weapon data is available from /weapons; Gogma Artian random skill/reinforcement rolls are not modeled as guaranteed data"
+  },
+  "notes": "Live API-backed database. Randomized charms are excluded from deterministic solver candidates. Series/group targets are solved from armor-set metadata and required piece counts."
 }
