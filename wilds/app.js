@@ -7,6 +7,12 @@ const esc=s=>String(s??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'
 const PARTS=['head','chest','arms','waist','legs'];
 const PART_LABEL={head:'頭',chest:'胴',arms:'腕',waist:'腰',legs:'脚'};
 const yieldUI=()=>new Promise(r=>setTimeout(r,0));
+async function fetchJSON(path){
+  const res=await fetch(`${API}${path}`,{headers:{Accept:'application/json'}});
+  if(!res.ok)throw new Error(`HTTP ${res.status} ${res.statusText} (${path})`);
+  const data=await res.json();
+  return Array.isArray(data)?data:(Array.isArray(data?.data)?data.data:data);
+}
 function skillMaxLevel(skill){const levels=(skill?.ranks||[]).map(r=>Number(r.level)||0).filter(Boolean);return levels.length?Math.max(...levels):1;}
 function levelOptions(max,current=1){return Array.from({length:max},(_,n)=>{const v=n+1;return `<option value="${v}" ${v===Number(current)?'selected':''}>Lv${v}</option>`;}).join('');}
 function skillSearchText(skill){const local=(window.WILDS_SKILL_DETAILS||{})[norm(skill?.name)]||{};const parts=[skill?.name,skill?.description,local.description,...(local.levels||[]).flatMap(r=>[r?.effect,r?.description,r?.text])];for(const r of (skill?.ranks||[]))parts.push(r?.description,r?.effect,r?.text);return norm(parts.filter(Boolean).join(' ')).toLocaleLowerCase('ja');}
