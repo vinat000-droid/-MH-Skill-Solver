@@ -17,20 +17,26 @@ function skillMaxLevel(skill){const levels=(skill?.ranks||[]).map(r=>Number(r.le
 function levelOptions(max,current=1){return Array.from({length:max},(_,n)=>{const v=n+1;return `<option value="${v}" ${v===Number(current)?'selected':''}>Lv${v}</option>`;}).join('');}
 function skillSearchText(skill){const local=(window.WILDS_SKILL_DETAILS||{})[norm(skill?.name)]||{};const parts=[skill?.name,skill?.description,local.description,...(local.levels||[]).flatMap(r=>[r?.effect,r?.description,r?.text])];for(const r of (skill?.ranks||[]))parts.push(r?.description,r?.effect,r?.text);return norm(parts.filter(Boolean).join(' ')).toLocaleLowerCase('ja');}
 function setGroupRequired(skill,level){const r=(skill?.ranks||[]).find(x=>Number(x.level)===Number(level));return Number(r?.setPiecesRequired)||null;}
-function makeSkillPicker(containerId,kind,targets,addFn){const p=$(containerId);p.innerHTML='';const weaponSkillIds=new Set(W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind).flatMap(w=>(w?.skills||[]).map(s=>String(s?.skill?.id))));const usable=W.skills.filter(x=>x&&(kind==='normal'?x.kind==='armor':kind==='weapon'?x.kind==='weapon'&&W.weaponKind&&weaponSkillIds.has(String(x.id)):x.kind===kind));const search=document.createElement('input');search.type='search';search.placeholder='スキル名・効果で検索…';search.autocomplete='off';const sel=document.createElement('select');const lv=document.createElement('select');const b=document.createElement('button');b.textContent='＋追加';function sync(){const sk=usable.find(x=>String(x.id)===String(sel.value));const max=skillMaxLevel(sk);lv.innerHTML=levelOptions(max,Math.min(Number(lv.value)||1,max));}function populate(filter=''){const q=norm(filter).toLocaleLowerCase('ja');const list=q?usable.filter(x=>skillSearchText(x).includes(q)):usable;const prev=sel.value;sel.innerHTML='<option value="">スキルを選択…</option>'+list.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');if(list.some(x=>String(x.id)===String(prev)))sel.value=prev;sync();}sel.onchange=sync;search.oninput=()=>populate(search.value);b.onclick=()=>{const id=+sel.value;if(!id)return;const sk=usable.find(x=>x.id===id);const level=Math.min(Number(lv.value)||1,skillMaxLevel(sk));addFn({id,name:sk.name,level});};p.append(search,sel,lv,b);populate();}
+function makeSkillPicker(containerId,kind,targets,addFn){const p=$(containerId);p.innerHTML='';const weaponSkills=new Set(W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind).flatMap(w=>(w?.skills||[]).map(s=>String(s?.skill?.id))));const armorSkills=new Set(W.armor.flatMap(a=>(a?.skills||[]).map(s=>String(s?.skill?.id))));const usable=W.skills.filter(x=>x&&(kind==='normal'?armorSkills.has(String(x.id)):kind==='weapon'?W.weaponKind&&weaponSkills.has(String(x.id)):x.kind===kind));const search=document.createElement('input');search.type='search';search.placeholder='スキル名・効果で検索…';search.autocomplete='off';const sel=document.createElement('select');const lv=document.createElement('select');const b=document.createElement('button');b.textContent='＋追加';function sync(){const sk=usable.find(x=>String(x.id)===String(sel.value));const max=skillMaxLevel(sk);lv.innerHTML=levelOptions(max,Math.min(Number(lv.value)||1,max));}function populate(filter=''){const q=norm(filter).toLocaleLowerCase('ja');const list=q?usable.filter(x=>skillSearchText(x).includes(q)):usable;const prev=sel.value;sel.innerHTML='<option value="">スキルを選択…</option>'+list.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');if(list.some(x=>String(x.id)===String(prev)))sel.value=prev;sync();}sel.onchange=sync;search.oninput=()=>populate(search.value);b.onclick=()=>{const id=+sel.value;if(!id)return;const sk=usable.find(x=>x.id===id);const level=Math.min(Number(lv.value)||1,skillMaxLevel(sk));addFn({id,name:sk.name,level,source:kind==='weapon'?'weapon':'armor'});};p.append(search,sel,lv,b);populate();}
 function weaponKindLabel(k){return ({'great-sword':'大剣','long-sword':'太刀','sword-shield':'片手剣','dual-blades':'双剣','hammer':'ハンマー','hunting-horn':'狩猟笛','lance':'ランス','gunlance':'ガンランス','switch-axe':'スラッシュアックス','charge-blade':'チャージアックス','insect-glaive':'操虫棍','light-bowgun':'ライトボウガン','heavy-bowgun':'ヘビィボウガン','bow':'弓'})[k]||k;}
 function weaponKinds(){return [...new Set(W.weapons.map(w=>w?.kind).filter(Boolean))].sort((a,b)=>weaponKindLabel(a).localeCompare(weaponKindLabel(b),'ja'));}
 function renderWeaponKindPicker(){const s=$('weaponKind');if(!s)return;const prev=W.weaponKind;const kinds=weaponKinds();s.innerHTML='<option value="">武器種を選択…</option>'+kinds.map(k=>`<option value="${esc(k)}">${esc(weaponKindLabel(k))}</option>`).join('');if(kinds.includes(prev))s.value=prev;else W.weaponKind='';renderPickers();}
 function renderPickers(){makeSkillPicker('normalSkillPicker','normal',W.targets,t=>{upsertTarget(W.targets,t);renderTargets();save();});makeSkillPicker('weaponSkillPicker','weapon',W.targets,t=>{upsertTarget(W.targets,t);renderTargets();save();});makeSkillPicker('setSkillPicker','set',W.setTargets,t=>{upsertTarget(W.setTargets,t);renderTargets();save();});makeSkillPicker('groupSkillPicker','group',W.groupTargets,t=>{upsertTarget(W.groupTargets,t);renderTargets();save();});}
-function upsertTarget(arr,t){const x=arr.find(v=>v.id===t.id);if(x)x.level=t.level;else arr.push(t);}
+function upsertTarget(arr,t){const x=arr.find(v=>v.id===t.id);if(x){x.level=t.level;if(t.source)x.source=t.source;}else arr.push(t);}
 function renderTargetRows(id,arr,kind,predicate=null){const d=$(id);d.innerHTML=arr.map((t,i)=>({t,i})).filter(x=>!predicate||predicate(x.t)).map(({t,i})=>{const sk=W.skills.find(x=>x.id===t.id);const max=skillMaxLevel(sk);const level=Math.min(Number(t.level)||1,max);t.level=level;const req=kind==='set'||kind==='group'?setGroupRequired(sk,level):null;const info=wildsSkillInfo(t.name);const levels=(info.levels||[]).filter(x=>x.level===level);return `<div class="selected-skill"><b>${esc(t.name)}</b><select data-i="${i}" class="targetLv">${levelOptions(max,level)}</select>${req?`<span class="small">${req}部位</span>`:''}${MHSkillPopover.button(t.name,{...info,levels})}<button data-i="${i}" class="removeTarget">削除</button></div>`;}).join('');d.querySelectorAll('.targetLv').forEach(e=>e.onchange=()=>{arr[+e.dataset.i].level=+e.value;renderTargets();save();});d.querySelectorAll('.removeTarget').forEach(e=>e.onclick=()=>{arr.splice(+e.dataset.i,1);renderTargets();save();});}
-function renderTargets(){renderTargetRows('selectedNormalSkills',W.targets,'normal',t=>W.skills.find(x=>x.id===t.id)?.kind==='armor');renderTargetRows('selectedWeaponSkills',W.targets,'normal',t=>W.skills.find(x=>x.id===t.id)?.kind==='weapon');renderTargetRows('selectedSetSkills',W.setTargets,'set');renderTargetRows('selectedGroupSkills',W.groupTargets,'group');}
+function renderTargets(){renderTargetRows('selectedNormalSkills',W.targets,'normal',t=>t.source!=='weapon');renderTargetRows('selectedWeaponSkills',W.targets,'normal',t=>t.source==='weapon');renderTargetRows('selectedSetSkills',W.setTargets,'set');renderTargetRows('selectedGroupSkills',W.groupTargets,'group');}
 function itemSkills(item){const m=new Map();for(const x of (item?.skills||[])){const k=norm(x.skill?.name);if(k)m.set(k,(m.get(k)||0)+(Number(x.level)||0));}return m;}
 function mergeMaps(arr){const m=new Map();for(const x of arr)for(const [k,v] of x)m.set(k,(m.get(k)||0)+v);return m;}
 function slots(item){return (item?.slots||[]).map(Number).filter(Boolean).sort((a,b)=>b-a);}
 function fitsDecoration(slot,d){return Number(d.slot)<=slot;}
 function uniqueSkillNames(targets){return [...new Set(targets.map(t=>norm(t.name)))];}
-function scoreItem(item,targets){const m=itemSkills(item);let sat=0;for(const t of targets)sat+=Math.min(Number(t.level)||0,m.get(norm(t.name))||0);return sat;}
+function targetSource(t){if(t?.source==='weapon')return 'weapon';if(t?.source==='armor')return 'armor';const sk=W.skills.find(x=>String(x?.id)===String(t?.id));return sk?.kind==='weapon'?'weapon':'armor';}
+function weaponTargets(){return W.targets.filter(t=>targetSource(t)==='weapon');}
+function armorTargets(){return W.targets.filter(t=>targetSource(t)!=='weapon');}
+function skillCanComeFromArmor(t){const id=String(t?.id);return W.armor.some(a=>(a?.skills||[]).some(s=>String(s?.skill?.id)===id));}
+function skillCanComeFromWeapon(t){const id=String(t?.id);return W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind).some(w=>(w?.skills||[]).some(s=>String(s?.skill?.id)===id));}
+function targetLevelFromSources(t,weapon,armor,charm,decos){const name=norm(t.name);const wm=itemSkills(weapon).get(name)||0;const am=mergeMaps([...armor.map(itemSkills),itemSkills(charm),...decos.map(itemSkills)]).get(name)||0;return targetSource(t)==='weapon'?wm+am:am;}
+function scoreItem(item,targets){const m=item instanceof Map?item:itemSkills(item);let sat=0;for(const t of targets)sat+=Math.min(Number(t.level)||0,m.get(norm(t.name))||0);return sat;}
 function bonusLevel(armor,target,kind){
   const sk=W.skills.find(x=>x.id===target.id); const reqLevel=Number(target.level)||0;
   if(!sk||!reqLevel)return 0;
@@ -63,7 +69,7 @@ function armorCandidates(){
   const bonusNames=new Set([...W.setTargets,...W.groupTargets].map(t=>norm(t.name)));
   let beams=[{set:[],skills:new Map(),slotSum:0}];
   for(const p of PARTS){
-    const basePool=byKind[p].slice().sort((a,b)=>{const sa=scoreItem(a,W.targets),sb=scoreItem(b,W.targets);return sb-sa||slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0);}).slice(0,LIMITS.armorPartPool);
+    const basePool=byKind[p].slice().sort((a,b)=>{const sa=scoreItem(a,armorTargets()),sb=scoreItem(b,W.targets);return sb-sa||slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0);}).slice(0,LIMITS.armorPartPool);
     const bonusPool=byKind[p].filter(a=>[bonusSkillForArmor(a,'set'),bonusSkillForArmor(a,'group')].some(x=>bonusNames.has(norm(x?.name))));
     const pool=[...new Map([...basePool,...bonusPool].map(a=>[armorIdentity(a),a])).values()];
     const next=[];
@@ -75,8 +81,10 @@ function armorCandidates(){
 }
 function decorationPool(kind){return W.decorations.filter(d=>d?.kind===kind);}
 function decoGain(d,name){return (d?.skills||[]).filter(s=>norm(s.skill?.name)===name).reduce((n,s)=>n+(Number(s.level)||0),0);}
-function fillDecorations(weaponSlots,armorSlots,baseSkills){
-  const deficits=W.targets.map(t=>({name:norm(t.name),need:Math.max(0,Number(t.level)-(baseSkills.get(norm(t.name))||0))})).filter(x=>x.need>0);
+function fillDecorations(weaponSlots,armorSlots,baseSkills,weapon=null,armor=[],charm=null){
+  const armorBase=mergeMaps([...armor.map(itemSkills),itemSkills(charm)]);
+  const weaponBase=itemSkills(weapon);
+  const deficits=W.targets.map(t=>{const n=norm(t.name);const have=targetSource(t)==='weapon'?(weaponBase.get(n)||0)+(armorBase.get(n)||0):(armorBase.get(n)||0);return {name:n,need:Math.max(0,Number(t.level)-have),source:targetSource(t)};}).filter(x=>x.need>0);
   if(!deficits.length)return {used:[],remaining:[],weaponLeft:[...weaponSlots],armorLeft:[...armorSlots]};
   const allSlots=[...weaponSlots.map(slot=>({kind:'weapon',slot})),...armorSlots.map(slot=>({kind:'armor',slot}))].sort((a,b)=>b.slot-a.slot);
   const pools={weapon:decorationPool('weapon'),armor:decorationPool('armor')};
@@ -88,7 +96,7 @@ function fillDecorations(weaponSlots,armorSlots,baseSkills){
     if(i>=deficits.length){const rem=deficits.reduce((n,t)=>n+Math.max(0,t.need-(gains.get(t.name)||0)),0);if(!best||rem<best.rem||rem===best.rem&&used.length<best.used.length)best={rem,used:[...used],avail:[...avail]};return;}
     const t=deficits[i];const have=gains.get(t.name)||0;if(have>=t.need){rec(i+1,avail,used,gains);return;}
     rec(i+1,avail,used,gains);
-    const opts=candidatesByTarget.get(t.name)||[];for(const o of opts){let idx=-1;for(let j=0;j<avail.length;j++)if(avail[j].kind===o.kind&&fitsDecoration(avail[j].slot,o.d)){idx=j;break;}if(idx<0)continue;const nextAvail=avail.slice();nextAvail.splice(idx,1);const ng=new Map(gains);for(const s of (o.d.skills||[])){const n=norm(s.skill?.name);ng.set(n,(ng.get(n)||0)+(Number(s.level)||0));}rec(i,nextAvail,[...used,{name:o.d.name,slot:o.d.slot,kind:o.kind,skill:t.name,level:o.gain}],ng);}
+    const opts=(candidatesByTarget.get(t.name)||[]).filter(o=>t.source==='weapon'||o.kind==='armor');for(const o of opts){let idx=-1;for(let j=0;j<avail.length;j++)if(avail[j].kind===o.kind&&fitsDecoration(avail[j].slot,o.d)){idx=j;break;}if(idx<0)continue;const nextAvail=avail.slice();nextAvail.splice(idx,1);const ng=new Map(gains);for(const s of (o.d.skills||[])){const n=norm(s.skill?.name);ng.set(n,(ng.get(n)||0)+(Number(s.level)||0));}rec(i,nextAvail,[...used,{name:o.d.name,slot:o.d.slot,kind:o.kind,skill:t.name,level:o.gain}],ng);}
   }
   rec(0,allSlots,[],new Map());
   const chosen=best?.used||[];const usedSlots=chosen.map(x=>({kind:x.kind,slot:x.slot}));const weaponLeft=[...weaponSlots],armorLeft=[...armorSlots];for(const u of usedSlots){const arr=u.kind==='weapon'?weaponLeft:armorLeft;const idx=arr.findIndex(s=>Number(s)===Number(u.slot));if(idx>=0)arr.splice(idx,1);}
@@ -103,7 +111,7 @@ function targetSatisfiedFromMaps(base,extraDecos=[]){
 }
 function decorationFeasible(weapon,armor,charm){
   const base=mergeMaps([itemSkills(weapon),...armor.map(itemSkills),itemSkills(charm)]);
-  const deco=fillDecorations(slots(weapon),armor.flatMap(slots),base);
+  const deco=fillDecorations(slots(weapon),armor.flatMap(slots),base,weapon,armor,charm);
   return deco.remaining.length===0;
 }
 function bonusTargetsSatisfiedFast(armor){
@@ -138,9 +146,9 @@ function collapseFreeArmor(c){
 }
 function evaluateCombo(weapon,armor,charm){
   const base=mergeMaps([itemSkills(weapon),...armor.map(itemSkills),itemSkills(charm)]);
-  const deco=fillDecorations(slots(weapon),armor.flatMap(slots),base);
+  const deco=fillDecorations(slots(weapon),armor.flatMap(slots),base,weapon,armor,charm);
   const final=activeSkillMap(weapon,armor,charm,findDecorationObjects(deco.used));
-  const normalRem=W.targets.map(t=>({name:norm(t.name),need:Math.max(0,Number(t.level)-(final.get(norm(t.name))||0))})).filter(x=>x.need>0);
+  const normalRem=W.targets.map(t=>{const total=targetSource(t)==='weapon'?((itemSkills(weapon).get(norm(t.name))||0)+mergeMaps([...armor.map(itemSkills),itemSkills(charm),...findDecorationObjects(deco.used).map(itemSkills)]).get(norm(t.name))||0):(mergeMaps([...armor.map(itemSkills),itemSkills(charm),...findDecorationObjects(deco.used).map(itemSkills)]).get(norm(t.name))||0);return {name:norm(t.name),need:Math.max(0,Number(t.level)-total),source:targetSource(t)};}).filter(x=>x.need>0);
   const setRem=W.setTargets.map(t=>({name:norm(t.name),need:Math.max(0,Number(t.level)-bonusLevel(armor,t,'set'))})).filter(x=>x.need>0);
   const groupRem=W.groupTargets.map(t=>({name:norm(t.name),need:Math.max(0,Number(t.level)-bonusLevel(armor,t,'group'))})).filter(x=>x.need>0);
   const remaining=[...normalRem,...setRem,...groupRem];
@@ -153,169 +161,128 @@ async function seriesOnlyCandidates(progress){
   const started=performance.now();
   const out=[];const seen=new Set();const deadline=started+LIMITS.maxMilliseconds;
   const byPart={};for(const p of PARTS)byPart[p]=W.armor.filter(a=>a?.kind===p);
-  const relevantNames=new Set([...W.setTargets,...W.groupTargets].map(t=>norm(t.name)));
-  const pools={};for(const p of PARTS){
-    pools[p]=byPart[p].filter(a=>[bonusSkillForArmor(a,'set'),bonusSkillForArmor(a,'group')].some(x=>relevantNames.has(norm(x?.name))));
+  const relevant=[...W.setTargets,...W.groupTargets];
+
+  // シリーズ／グループを「要求Lvを発動させるための必要部位数」で確定する。
+  // 一度必要数を満たした部位は、この後の通常スキル探索では固定する。
+  function satisfied(armor){
+    return armorBonusSatisfied(armor,W.setTargets,'set')&&armorBonusSatisfied(armor,W.groupTargets,'group');
   }
-  const targetSatisfied=(armor)=>armorBonusSatisfied(armor,W.setTargets,'set')&&armorBonusSatisfied(armor,W.groupTargets,'group');
   function addResult(armor){
-    if(!armor.length||!armorBonusSatisfied(armor,W.setTargets,'set'))return;
-    if(!armorBonusSatisfied(armor,W.groupTargets,'group'))return;
+    if(!armor.length||!satisfied(armor))return;
+    // 要求Lvを満たした時点の構成だけを保存する。後から同シリーズを追加しない。
     const key=PARTS.map(p=>armor.find(a=>a?.kind===p)?.id||'').join('|');
-    if(seen.has(key))return;seen.add(key);
+    if(seen.has(key))return;
+    seen.add(key);
     const weapon={id:'free-weapon',name:'フリー',skills:[],slots:[]};
     const charm={id:'free-charm',name:'フリー',skills:[],source:null};
-    out.push({weapon,charm,armor:armor.slice().sort((x,y)=>PARTS.indexOf(x.kind)-PARTS.indexOf(y.kind)),decos:[],remaining:[],skills:new Map(),sat:targetTotal(),total:targetTotal(),slotScore:armor.reduce((n,a)=>n+slots(a).reduce((u,v)=>u+v,0),0)});
+    out.push({
+      weapon,charm,
+      armor:armor.slice().sort((x,y)=>PARTS.indexOf(x.kind)-PARTS.indexOf(y.kind)),
+      decos:[],remaining:[],skills:new Map(),
+      sat:targetTotal(),total:targetTotal(),
+      slotScore:armor.reduce((n,a)=>n+slots(a).reduce((u,v)=>u+v,0),0)
+    });
   }
+
   function dfs(i,armor){
-    if(out.length>=LIMITS.maxResults||performance.now()>=deadline)return;
-    // Series/group conditions are the armor-search base. Once all are satisfied,
-    // stop selecting armor immediately; every unselected later part is free.
-    if(i>=PARTS.length){if(targetSatisfied(armor))addResult(armor);return;}
-    if(targetSatisfied(armor)){addResult(armor);return;}
+    if(out.length>=Math.max(LIMITS.maxResults,120)||performance.now()>=deadline)return;
+    // ここで満たしたら即確定。残り部位は絶対に選ばない。
+    if(satisfied(armor)){addResult(armor);return;}
+    if(i>=PARTS.length)return;
     const part=PARTS[i];
-    // Skip is allowed only while the condition is still unresolved; it lets the
-    // next part supply the required set/group piece without manufacturing an all-free result.
+    // 現在の部位を選ばず次へ進む。
     dfs(i+1,armor);
-    const pool=pools[part]||[];
+
+    // この部位で条件を満たせる可能性がある防具だけを試す。
+    const pool=byPart[part].filter(a=>{
+      if(!relevant.length)return false;
+      return relevant.some(t=>{
+        const sk=W.skills.find(x=>String(x?.id)===String(t.id));
+        const kind=sk?.kind==='group'?'group':'set';
+        return norm(bonusSkillForArmor(a,kind)?.name)===norm(t.name);
+      });
+    });
     for(const a of pool){
       dfs(i+1,[...armor,a]);
-      if(out.length>=LIMITS.maxResults||performance.now()>=deadline)return;
+      if(out.length>=Math.max(LIMITS.maxResults,120)||performance.now()>=deadline)return;
     }
   }
   dfs(0,[]);
-  progress('②',`シリーズ防具を確定構成から探索中（${out.length}件）`,75);
+  progress('②',`シリーズ防具を確定構成から探索中（${out.length}件）`,55);
   await yieldUI();
   return {candidates:out,estimated:out.length,evaluated:out.length,stopped:performance.now()>=deadline,elapsed:Math.round(performance.now()-started),mode:'series'};
 }
-
 async function seriesWithWeaponCandidates(progress){
-  const started=performance.now();
-  const base=await seriesOnlyCandidates(msg=>progress(msg==='②'?'②':'②', 'シリーズ防具を先に確定中', 55));
-  const weapons=W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind);
-  const out=[];
-  for(const st of base.candidates){
-    for(const w of weapons){
-      const m=itemSkills(w);
-      const ok=W.targets.filter(t=>W.skills.find(x=>String(x?.id)===String(t.id))?.kind==='weapon')
-        .every(t=>(m.get(norm(t.name))||0)>=Number(t.level||0));
-      if(!ok)continue;
-      const fixedParts=st.armor.map(a=>a?.kind).filter(Boolean);
-      const skills=m;
-      out.push({
-        weapon:w,
-        armor:st.armor.slice(),
-        charm:{id:'free-charm',name:'フリー',skills:[],source:null},
-        decos:[],remaining:[],skills,
-        sat:targetTotal(),total:targetTotal(),
-        slotScore:slots(w).reduce((a,b)=>a+b,0)+st.slotScore,
-        freeParts:PARTS.filter(p=>!fixedParts.includes(p))
-      });
-      if(out.length>=LIMITS.maxResults)break;
-    }
-    if(out.length>=LIMITS.maxResults)break;
-  }
-  progress('③',`シリーズ防具＋武器スキルを満たす武器を検索中（${out.length}件）`,85);
-  await yieldUI();
-  return {candidates:out,estimated:weapons.length,evaluated:out.length,stopped:false,elapsed:Math.round(performance.now()-started),mode:'seriesWeapon'};
+  return seriesWithWeaponAndNormalCandidates(progress);
 }
 
 async function seriesWithWeaponAndNormalCandidates(progress){
   const started=performance.now();
   const base=await seriesOnlyCandidates(()=>progress('②','シリーズ防具を先に確定中',45));
-  const weaponTargets=W.targets.filter(t=>W.skills.find(x=>String(x?.id)===String(t.id))?.kind==='weapon');
-  const normalTargets=W.targets.filter(t=>W.skills.find(x=>String(x?.id)===String(t.id))?.kind==='armor');
+  const wt=weaponTargets();
+  const at=armorTargets();
+  const fallbackTargets=wt.filter(t=>skillCanComeFromArmor(t));
+  const armorSearchTargets=[...at,...fallbackTargets.filter(f=>!at.some(a=>String(a.id)===String(f.id)))];
   const weapons=W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind);
   const charms=flattenCharms();
   const out=[];
   const deadline=started+LIMITS.maxMilliseconds;
+  const weaponPool=weapons.filter(w=>wt.every(t=>{
+    const m=itemSkills(w);const have=m.get(norm(t.name))||0;
+    return have>=Number(t.level||0)||skillCanComeFromArmor(t);
+  })).sort((a,b)=>scoreItem(b,wt)-scoreItem(a,wt)||slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0));
+  const usefulCharms=charms.filter(c=>armorSearchTargets.some(t=>(itemSkills(c).get(norm(t.name))||0)>0));
+  const charmPool=[...new Map([...usefulCharms,...charms.slice().sort((a,b)=>scoreItem(b,armorSearchTargets)-scoreItem(a,armorSearchTargets)||slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0)).slice(0,LIMITS.charmPool)].map(c=>[String(c.id),c])).values()];
 
-  function weaponOK(w){
-    const m=itemSkills(w);
-    return weaponTargets.every(t=>(m.get(norm(t.name))||0)>=Number(t.level||0));
+  function complete(weapon,armor,charm){
+    const deco=fillDecorations(slots(weapon),armor.flatMap(slots),mergeMaps([itemSkills(weapon),...armor.map(itemSkills),itemSkills(charm)]),weapon,armor,charm);
+    const used=findDecorationObjects(deco.used);
+    const armorMap=mergeMaps([...armor.map(itemSkills),itemSkills(charm),...used.map(itemSkills)]);
+    const wm=itemSkills(weapon);
+    const remaining=[];
+    for(const t of W.targets){
+      const have=targetSource(t)==='weapon'?(wm.get(norm(t.name))||0)+(armorMap.get(norm(t.name))||0):(armorMap.get(norm(t.name))||0);
+      if(have<Number(t.level||0))remaining.push({name:norm(t.name),need:Number(t.level||0)-have,source:targetSource(t)});
+    }
+    const final=activeSkillMap(weapon,armor,charm,used);
+    const setRem=W.setTargets.map(t=>({name:norm(t.name),need:Math.max(0,Number(t.level)-bonusLevel(armor,t,'set'))})).filter(x=>x.need>0);
+    const groupRem=W.groupTargets.map(t=>({name:norm(t.name),need:Math.max(0,Number(t.level)-bonusLevel(armor,t,'group'))})).filter(x=>x.need>0);
+    const rem=[...remaining,...setRem,...groupRem];
+    const sat=W.targets.reduce((n,t)=>{const have=targetSource(t)==='weapon'?(wm.get(norm(t.name))||0)+(armorMap.get(norm(t.name))||0):(armorMap.get(norm(t.name))||0);return n+Math.min(Number(t.level||0),have)},0)+W.setTargets.reduce((n,t)=>n+Math.min(Number(t.level||0),bonusLevel(armor,t,'set')),0)+W.groupTargets.reduce((n,t)=>n+Math.min(Number(t.level||0),bonusLevel(armor,t,'group')),0);
+    return {weapon,armor,charm,decos:deco.used,remaining:rem,skills:final,sat,total:targetTotal(),slotScore:deco.weaponLeft.reduce((s,x)=>s+x,0)+deco.armorLeft.reduce((s,x)=>s+x,0)};
   }
-  const weaponPool=weapons.filter(weaponOK).sort((a,b)=>
-    scoreItem(b,weaponTargets)-scoreItem(a,weaponTargets)||
-    slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0)
-  );
-  const charmPool=charms.slice().sort((a,b)=>
-    scoreItem(b,normalTargets)-scoreItem(a,normalTargets)||
-    slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0)
-  ).slice(0,LIMITS.charmPool);
 
   for(const st of base.candidates){
     if(performance.now()>=deadline)break;
-    const fixedKinds=new Set(st.armor.map(a=>a?.kind).filter(Boolean));
-    const freeParts=PARTS.filter(p=>!fixedKinds.has(p));
+    const fixed=new Set(st.armor.map(a=>a?.kind).filter(Boolean));
+    const freeParts=PARTS.filter(p=>!fixed.has(p));
     let beams=[{armor:st.armor.slice(),skills:mergeMaps(st.armor.map(itemSkills)),slotScore:st.slotScore}];
-
-    // シリーズで確定した部位はここでは絶対に変更しない。
-    // 残り部位だけを通常スキル用の候補として探索する。
     for(const part of freeParts){
-      const pool=W.armor.filter(a=>a?.kind===part).slice().sort((a,b)=>
-        scoreItem(b,normalTargets)-scoreItem(a,normalTargets)||
-        slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0)
-      ).slice(0,LIMITS.armorPartPool);
-      const next=[];
-      for(const state of beams)for(const a of pool){
-        next.push({
-          armor:[...state.armor,a],
-          skills:mergeMaps([state.skills,itemSkills(a)]),
-          slotScore:state.slotScore+slots(a).reduce((x,y)=>x+y,0)
-        });
-      }
-      next.sort((a,b)=>{
-        let sa=0,sb=0;
-        for(const t of normalTargets){
-          sa+=Math.min(Number(t.level)||0,a.skills.get(norm(t.name))||0);
-          sb+=Math.min(Number(t.level)||0,b.skills.get(norm(t.name))||0);
-        }
-        return sb-sa||b.slotScore-a.slotScore;
-      });
-      beams=next.slice(0,LIMITS.armorBeam);
+      const pool=W.armor.filter(a=>a?.kind===part).slice().sort((a,b)=>scoreItem(b,armorSearchTargets)-scoreItem(a,armorSearchTargets)||slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0)).slice(0,LIMITS.armorPartPool);
+      const next=[];for(const state of beams)for(const a of pool)next.push({armor:[...state.armor,a],skills:mergeMaps([state.skills,itemSkills(a)]),slotScore:state.slotScore+slots(a).reduce((x,y)=>x+y,0)});
+      next.sort((a,b)=>scoreItem(b.skills,at)-scoreItem(a.skills,at)||b.slotScore-a.slotScore);beams=next.slice(0,LIMITS.armorBeam);
     }
-
     for(const st2 of beams){
-      if(performance.now()>=deadline)break;
       for(const w of weaponPool){
-        if(performance.now()>=deadline)break;
-        // 武器スキルは武器だけで成立していることをここでも保証。
-        const wm=itemSkills(w);
-        if(!weaponTargets.every(t=>(wm.get(norm(t.name))||0)>=Number(t.level||0)))continue;
         for(const c of charmPool){
           if(performance.now()>=deadline)break;
-          const ev=evaluateCombo(w,st2.armor,c);
-          if(ev.remaining.some(x=>W.skills.find(s=>norm(s.name)===norm(x.name))?.kind==='weapon'))continue;
+          const ev=complete(w,st2.armor,c);
           if(ev.remaining.length)continue;
-          const fixed=new Set(st2.armor.map(a=>a?.kind).filter(Boolean));
-          out.push({...ev,freeParts:PARTS.filter(p=>!fixed.has(p))});
-          out.sort(rankCandidate);
-          if(out.length>LIMITS.maxResults)out.pop();
-          // 同じ防具＋武器で、必要以上に護石違いを増やさない。
+          out.push({...ev,freeParts:freeParts});out.sort(rankCandidate);if(out.length>LIMITS.maxResults)out.pop();
           break;
         }
       }
     }
-    progress('③',`シリーズ固定後の通常スキルを評価中（${out.length}件）`,80);
-    await yieldUI();
+    progress('③',`シリーズ固定後の不足スキルを評価中（${out.length}件）`,80);await yieldUI();
   }
   out.sort(rankCandidate);
-  return {
-    candidates:out.slice(0,LIMITS.maxResults),
-    estimated:base.candidates.length*weaponPool.length,
-    evaluated:out.length,
-    stopped:performance.now()>=deadline,
-    elapsed:Math.round(performance.now()-started),
-    mode:'seriesWeaponNormal'
-  };
+  return {candidates:out.slice(0,LIMITS.maxResults),estimated:base.candidates.length*weaponPool.length,evaluated:out.length,stopped:performance.now()>=deadline,elapsed:Math.round(performance.now()-started),mode:'seriesWeaponNormal'};
 }
 
-function hasWeaponSkillTarget(){return W.targets.some(t=>W.skills.find(x=>String(x?.id)===String(t.id))?.kind==='weapon');}
+function hasWeaponSkillTarget(){return W.targets.some(t=>targetSource(t)==='weapon');}
 function isWeaponSkillOnly(){
-  return !W.setTargets.length&&!W.groupTargets.length&&W.targets.length>0&&W.targets.every(t=>{
-    const sk=W.skills.find(x=>String(x?.id)===String(t.id));
-    return sk?.kind==='weapon';
-  });
+  return !W.setTargets.length&&!W.groupTargets.length&&W.targets.length>0&&W.targets.every(t=>targetSource(t)==='weapon');
 }
 async function weaponOnlyCandidates(progress){
   const started=performance.now();
@@ -328,7 +295,7 @@ async function weaponOnlyCandidates(progress){
     }
   }
   matched.sort((a,b)=>b.slotScore-a.slotScore||String(a.weapon?.name||'').localeCompare(String(b.weapon?.name||''),'ja'));
-  progress('②',`武器スキルを満たす武器を検索中（${W.weapons.length.toLocaleString()}件）`,70);
+  progress('②',`武器スキルを満たす武器を検索中（${W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind).length.toLocaleString()}件）`,70);
   await yieldUI();
   return {candidates:matched.slice(0,LIMITS.maxResults),estimated:W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind).length,evaluated:W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind).length,stopped:false,elapsed:Math.round(performance.now()-started),mode:'weaponOnly'};
 }
@@ -343,11 +310,11 @@ function makeWeaponCharmPairs(){
 }
 function rankCandidate(a,b){const aFull=a.sat===a.total,bFull=b.sat===b.total;if(aFull!==bFull)return aFull?-1:1;if(a.sat!==b.sat)return b.sat-a.sat;if(a.remaining.length!==b.remaining.length)return a.remaining.length-b.remaining.length;return b.slotScore-a.slotScore;}
 async function makeCandidates(progress){
-  if(isWeaponSkillOnly()) return weaponOnlyCandidates(progress);
+  if(isWeaponSkillOnly()&&!W.targets.some(t=>skillCanComeFromArmor(t))) return weaponOnlyCandidates(progress);
   // シリーズ条件がある場合は、通常スキル検索より先にシリーズ防具を確定する。
   // シリーズ＋武器スキルでは、シリーズを満たした部位を固定し、武器だけを後段で探索する。
   if((W.setTargets.length||W.groupTargets.length) && hasWeaponSkillTarget()){
-    const hasArmorNormal=W.targets.some(t=>W.skills.find(x=>String(x?.id)===String(t.id))?.kind==='armor');
+    const hasArmorNormal=W.targets.some(t=>targetSource(t)!=='weapon');
     return hasArmorNormal
       ? seriesWithWeaponAndNormalCandidates(progress)
       : seriesWithWeaponCandidates(progress);
@@ -378,7 +345,7 @@ async function makeCandidates(progress){
 function wildsSkillInfo(name){const sk=W.skills.find(x=>norm(x.name)===norm(name));const local=(window.WILDS_SKILL_DETAILS||{})[norm(name)]||{};const description=local.description||sk?.description||'';if(!sk)return {name,description,levels:local.levels||[]};const ranks=(sk.ranks||[]).map(r=>({level:Number(r.level)||0,effect:r.description||r.effect||r.text||''})).filter(x=>x.level&&x.effect);if(ranks.length){const localByLevel=new Map((local.levels||[]).map(x=>[Number(x.level),x.effect]));return {name,description,levels:ranks.map(x=>localByLevel.has(x.level)?{...x,effect:localByLevel.get(x.level)}:x)};}return {name,description,levels:description?[{level:1,effect:description}]:[]};}
 function actualBonusSkills(armor,kind){const result=new Map();if(kind==='group'){for(const a of armor){const b=bonusSkillForArmor(a,'group');const n=norm(b?.name);if(n)result.set(n,(result.get(n)||0)+1);}return result;}
   const bySkillSet=new Map();for(const a of armor){const b=bonusSkillForArmor(a,'set');const n=norm(b?.name);const sid=setIdentity(a);if(!n||!sid)continue;if(!bySkillSet.has(n))bySkillSet.set(n,new Map());const m=bySkillSet.get(n);m.set(sid,(m.get(sid)||0)+1);}
-  for(const [name,counts] of bySkillSet){const sk=W.skills.find(s=>norm(s.name)===name);let max=0;for(const pieces of counts.values())for(const r of (sk?.ranks||[])){if(Number(r.setPiecesRequired)&&pieces>=Number(r.setPiecesRequired))max=Math.max(max,Number(r.level)||0);}if(max)result.set(name,max);}return result;}
+  for(const [name,counts] of bySkillSet){const sk=W.skills.find(s=>norm(s.name)===name);let max=0;for(const pieces of counts.values())for(const r of (sk?.ranks||[])){if(Number(r.setPiecesRequired)&&pieces>=Number(r.setPiecesRequired))max=Math.max(max,Number(r.level)||0);}const target=W.setTargets.find(t=>norm(t.name)===name);if(target)max=Math.min(max,Number(target.level)||max);if(max)result.set(name,max);}return result;}
 function allActiveSkills(c){const m=new Map();const free=new Set(c.freeParts||[]);for(const x of [c.weapon,c.charm])for(const s of (x?.skills||[])){const n=norm(s.skill?.name);if(n)m.set(n,(m.get(n)||0)+(Number(s.level)||0));}for(const a of c.armor)if(!free.has(a?.kind))for(const s of (a?.skills||[])){const n=norm(s.skill?.name);if(n)m.set(n,(m.get(n)||0)+(Number(s.level)||0));}for(const d of findDecorationObjects(c.decos))for(const s of (d.skills||[])){const n=norm(s.skill?.name);if(n)m.set(n,(m.get(n)||0)+(Number(s.level)||0));}
   const shownArmor=c.armor.filter(a=>!free.has(a?.kind));const set=actualBonusSkills(shownArmor,'set');for(const [n,lv] of set)m.set(n,Math.max(m.get(n)||0,lv));const group=actualBonusSkills(shownArmor,'group');for(const [n,pieces] of group){const sk=W.skills.find(s=>norm(s.name)===n);let lv=0;for(const r of (sk?.ranks||[])){if(Number(r.setPiecesRequired)&&pieces>=Number(r.setPiecesRequired))lv=Math.max(lv,Number(r.level)||0);}if(lv)m.set(n,Math.max(m.get(n)||0,lv));}
   return [...m.entries()].sort((a,b)=>a[0].localeCompare(b[0],'ja'));}
