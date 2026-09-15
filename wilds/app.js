@@ -189,6 +189,127 @@ async function seriesOnlyCandidates(progress){
   return {candidates:out,estimated:out.length,evaluated:out.length,stopped:performance.now()>=deadline,elapsed:Math.round(performance.now()-started),mode:'series'};
 }
 
+async function seriesWithWeaponCandidates(progress){
+  const started=performance.now();
+  const base=await seriesOnlyCandidates(msg=>progress(msg==='②'?'②':'②', 'シリーズ防具を先に確定中', 55));
+  const weapons=W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind);
+  const out=[];
+  for(const st of base.candidates){
+    for(const w of weapons){
+      const m=itemSkills(w);
+      const ok=W.targets.filter(t=>W.skills.find(x=>String(x?.id)===String(t.id))?.kind==='weapon')
+        .every(t=>(m.get(norm(t.name))||0)>=Number(t.level||0));
+      if(!ok)continue;
+      const fixedParts=st.armor.map(a=>a?.kind).filter(Boolean);
+      const skills=m;
+      out.push({
+        weapon:w,
+        armor:st.armor.slice(),
+        charm:{id:'free-charm',name:'フリー',skills:[],source:null},
+        decos:[],remaining:[],skills,
+        sat:targetTotal(),total:targetTotal(),
+        slotScore:slots(w).reduce((a,b)=>a+b,0)+st.slotScore,
+        freeParts:PARTS.filter(p=>!fixedParts.includes(p))
+      });
+      if(out.length>=LIMITS.maxResults)break;
+    }
+    if(out.length>=LIMITS.maxResults)break;
+  }
+  progress('③',`シリーズ防具＋武器スキルを満たす武器を検索中（${out.length}件）`,85);
+  await yieldUI();
+  return {candidates:out,estimated:weapons.length,evaluated:out.length,stopped:false,elapsed:Math.round(performance.now()-started),mode:'seriesWeapon'};
+}
+
+async function seriesWithWeaponAndNormalCandidates(progress){
+  const started=performance.now();
+  const base=await seriesOnlyCandidates(()=>progress('②','シリーズ防具を先に確定中',45));
+  const weaponTargets=W.targets.filter(t=>W.skills.find(x=>String(x?.id)===String(t.id))?.kind==='weapon');
+  const normalTargets=W.targets.filter(t=>W.skills.find(x=>String(x?.id)===String(t.id))?.kind==='armor');
+  const weapons=W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind);
+  const charms=flattenCharms();
+  const out=[];
+  const deadline=started+LIMITS.maxMilliseconds;
+
+  function weaponOK(w){
+    const m=itemSkills(w);
+    return weaponTargets.every(t=>(m.get(norm(t.name))||0)>=Number(t.level||0));
+  }
+  const weaponPool=weapons.filter(weaponOK).sort((a,b)=>
+    scoreItem(b,weaponTargets)-scoreItem(a,weaponTargets)||
+    slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0)
+  );
+  const charmPool=charms.slice().sort((a,b)=>
+    scoreItem(b,normalTargets)-scoreItem(a,normalTargets)||
+    slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0)
+  ).slice(0,LIMITS.charmPool);
+
+  for(const st of base.candidates){
+    if(performance.now()>=deadline)break;
+    const fixedKinds=new Set(st.armor.map(a=>a?.kind).filter(Boolean));
+    const freeParts=PARTS.filter(p=>!fixedKinds.has(p));
+    let beams=[{armor:st.armor.slice(),skills:mergeMaps(st.armor.map(itemSkills)),slotScore:st.slotScore}];
+
+    // シリーズで確定した部位はここでは絶対に変更しない。
+    // 残り部位だけを通常スキル用の候補として探索する。
+    for(const part of freeParts){
+      const pool=W.armor.filter(a=>a?.kind===part).slice().sort((a,b)=>
+        scoreItem(b,normalTargets)-scoreItem(a,normalTargets)||
+        slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0)
+      ).slice(0,LIMITS.armorPartPool);
+      const next=[];
+      for(const state of beams)for(const a of pool){
+        next.push({
+          armor:[...state.armor,a],
+          skills:mergeMaps([state.skills,itemSkills(a)]),
+          slotScore:state.slotScore+slots(a).reduce((x,y)=>x+y,0)
+        });
+      }
+      next.sort((a,b)=>{
+        let sa=0,sb=0;
+        for(const t of normalTargets){
+          sa+=Math.min(Number(t.level)||0,a.skills.get(norm(t.name))||0);
+          sb+=Math.min(Number(t.level)||0,b.skills.get(norm(t.name))||0);
+        }
+        return sb-sa||b.slotScore-a.slotScore;
+      });
+      beams=next.slice(0,LIMITS.armorBeam);
+    }
+
+    for(const st2 of beams){
+      if(performance.now()>=deadline)break;
+      for(const w of weaponPool){
+        if(performance.now()>=deadline)break;
+        // 武器スキルは武器だけで成立していることをここでも保証。
+        const wm=itemSkills(w);
+        if(!weaponTargets.every(t=>(wm.get(norm(t.name))||0)>=Number(t.level||0)))continue;
+        for(const c of charmPool){
+          if(performance.now()>=deadline)break;
+          const ev=evaluateCombo(w,st2.armor,c);
+          if(ev.remaining.some(x=>W.skills.find(s=>norm(s.name)===norm(x.name))?.kind==='weapon'))continue;
+          if(ev.remaining.length)continue;
+          const fixed=new Set(st2.armor.map(a=>a?.kind).filter(Boolean));
+          out.push({...ev,freeParts:PARTS.filter(p=>!fixed.has(p))});
+          out.sort(rankCandidate);
+          if(out.length>LIMITS.maxResults)out.pop();
+          // 同じ防具＋武器で、必要以上に護石違いを増やさない。
+          break;
+        }
+      }
+    }
+    progress('③',`シリーズ固定後の通常スキルを評価中（${out.length}件）`,80);
+    await yieldUI();
+  }
+  out.sort(rankCandidate);
+  return {
+    candidates:out.slice(0,LIMITS.maxResults),
+    estimated:base.candidates.length*weaponPool.length,
+    evaluated:out.length,
+    stopped:performance.now()>=deadline,
+    elapsed:Math.round(performance.now()-started),
+    mode:'seriesWeaponNormal'
+  };
+}
+
 function hasWeaponSkillTarget(){return W.targets.some(t=>W.skills.find(x=>String(x?.id)===String(t.id))?.kind==='weapon');}
 function isWeaponSkillOnly(){
   return !W.setTargets.length&&!W.groupTargets.length&&W.targets.length>0&&W.targets.every(t=>{
@@ -223,6 +344,14 @@ function makeWeaponCharmPairs(){
 function rankCandidate(a,b){const aFull=a.sat===a.total,bFull=b.sat===b.total;if(aFull!==bFull)return aFull?-1:1;if(a.sat!==b.sat)return b.sat-a.sat;if(a.remaining.length!==b.remaining.length)return a.remaining.length-b.remaining.length;return b.slotScore-a.slotScore;}
 async function makeCandidates(progress){
   if(isWeaponSkillOnly()) return weaponOnlyCandidates(progress);
+  // シリーズ条件がある場合は、通常スキル検索より先にシリーズ防具を確定する。
+  // シリーズ＋武器スキルでは、シリーズを満たした部位を固定し、武器だけを後段で探索する。
+  if((W.setTargets.length||W.groupTargets.length) && hasWeaponSkillTarget()){
+    const hasArmorNormal=W.targets.some(t=>W.skills.find(x=>String(x?.id)===String(t.id))?.kind==='armor');
+    return hasArmorNormal
+      ? seriesWithWeaponAndNormalCandidates(progress)
+      : seriesWithWeaponCandidates(progress);
+  }
   if(!W.targets.length && (W.setTargets.length||W.groupTargets.length)) return seriesOnlyCandidates(progress);
   const started=performance.now();const armorStates=armorCandidates();progress('②','武器・護石候補を絞り込み中',35);
   await yieldUI();const pairs=makeWeaponCharmPairs();
