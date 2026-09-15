@@ -140,6 +140,52 @@ function evaluateCombo(weapon,armor,charm){
     +W.groupTargets.reduce((s,t)=>s+Math.min(Number(t.level),bonusLevel(armor,t,'group')),0);
   return {weapon,armor,charm,decos:deco.used,remaining,skills:final,sat,total:targetTotal(),slotScore:deco.weaponLeft.reduce((s,x)=>s+x,0)+deco.armorLeft.reduce((s,x)=>s+x,0)};
 }
+async function seriesOnlyCandidates(progress){
+  const started=performance.now();
+  const targetNames=new Set([...W.setTargets,...W.groupTargets].map(t=>norm(t.name)));
+  const byPart={};for(const p of PARTS)byPart[p]=W.armor.filter(a=>a?.kind===p);
+  let states=[{armor:[],score:0}];
+  for(let i=0;i<PARTS.length;i++){
+    const part=PARTS[i];
+    const pool=byPart[part].filter(a=>[
+      bonusSkillForArmor(a,'set'),bonusSkillForArmor(a,'group')
+    ].some(x=>targetNames.has(norm(x?.name))));
+    const next=[];
+    // Empty means: this armor slot is intentionally left free. This is essential for
+    // series-only targets such as a 2-piece set bonus.
+    for(const st of states){
+      next.push({armor:st.armor,score:st.score});
+      for(const a of pool){
+        const armor=[...st.armor,a];
+        let score=0;
+        for(const t of W.setTargets)score+=Math.min(Number(t.level)||0,bonusLevel(armor,t,'set'))*100;
+        for(const t of W.groupTargets)score+=Math.min(Number(t.level)||0,bonusLevel(armor,t,'group'))*100;
+        score+=armor.reduce((n,x)=>n+slots(x).reduce((u,v)=>u+v,0),0);
+        next.push({armor,score});
+      }
+    }
+    next.sort((a,b)=>b.score-a.score);
+    states=next.slice(0,1200);
+    progress('②',`シリーズ防具を探索中（${i+1}/5）`,20+i*12);
+    await yieldUI();
+    if(performance.now()-started>LIMITS.maxMilliseconds)break;
+  }
+  const valid=states.filter(st=>armorBonusSatisfied(st.armor,W.setTargets,'set')&&armorBonusSatisfied(st.armor,W.groupTargets,'group'));
+  valid.sort((a,b)=>b.score-a.score);
+  const unique=[];const seen=new Set();
+  for(const st of valid){
+    const key=PARTS.map(p=>st.armor.find(a=>a?.kind===p)?.id||'').join('|');
+    if(seen.has(key))continue;seen.add(key);unique.push(st);
+    if(unique.length>=LIMITS.maxResults)break;
+  }
+  const weapon={id:'free-weapon',name:'フリー',skills:[],slots:[]};
+  const charm={id:'free-charm',name:'フリー',skills:[],source:null};
+  const out=unique.map(st=>collapseFreeArmor({
+    weapon,charm,armor:st.armor,decos:[],remaining:[],skills:new Map(),
+    sat:targetTotal(),total:targetTotal(),slotScore:st.score
+  }));
+  return {candidates:out,estimated:valid.length,evaluated:valid.length,stopped:false,elapsed:Math.round(performance.now()-started)};
+}
 function pairScore(w,c){return scoreItem(w,W.targets)+scoreItem(c,W.targets);}
 function makeWeaponCharmPairs(){
   const charms=flattenCharms();
@@ -150,6 +196,7 @@ function makeWeaponCharmPairs(){
 }
 function rankCandidate(a,b){const aFull=a.sat===a.total,bFull=b.sat===b.total;if(aFull!==bFull)return aFull?-1:1;if(a.sat!==b.sat)return b.sat-a.sat;if(a.remaining.length!==b.remaining.length)return a.remaining.length-b.remaining.length;return b.slotScore-a.slotScore;}
 async function makeCandidates(progress){
+  if(!W.targets.length && (W.setTargets.length||W.groupTargets.length)) return seriesOnlyCandidates(progress);
   const started=performance.now();const armorStates=armorCandidates();progress('②','武器・護石候補を絞り込み中',35);
   await yieldUI();const pairs=makeWeaponCharmPairs();
   const estimated=armorStates.length*pairs.length;const maxEval=LIMITS.maxEvaluations;const deadline=started+LIMITS.maxMilliseconds;const total=targetTotal();
@@ -180,7 +227,7 @@ function allActiveSkills(c){const m=new Map();const free=new Set(c.freeParts||[]
   const shownArmor=c.armor.filter(a=>!free.has(a?.kind));const set=actualBonusSkills(shownArmor,'set');for(const [n,lv] of set)m.set(n,Math.max(m.get(n)||0,lv));const group=actualBonusSkills(shownArmor,'group');for(const [n,pieces] of group){const sk=W.skills.find(s=>norm(s.name)===n);let lv=0;for(const r of (sk?.ranks||[])){if(Number(r.setPiecesRequired)&&pieces>=Number(r.setPiecesRequired))lv=Math.max(lv,Number(r.level)||0);}if(lv)m.set(n,Math.max(m.get(n)||0,lv));}
   return [...m.entries()].sort((a,b)=>a[0].localeCompare(b[0],'ja'));}
 function renderAllActiveSkills(c){const list=allActiveSkills(c);return `<details open class="active-skills"><summary>発動スキル（${list.length}種）</summary><div class="skill-list">${list.map(([name,lv])=>`<div class="active-skill-line"><span>${esc(name)} Lv${lv}</span>${MHSkillPopover.button(name,wildsSkillInfo(name))}</div>`).join('')}</div></details>`;}
-function renderResults(cands,meta){const r=$('results');if(!cands.length){$('status').classList.remove('hidden');$('status').textContent='候補なし';r.innerHTML='';return;}$('status').classList.remove('hidden');$('status').textContent=`検索 ${meta.evaluated.toLocaleString()}件を評価${meta.stopped?'（探索上限または時間上限で打ち切り）':''}`;r.innerHTML=cands.map((c,i)=>`<section class="card result"><h3>#${i+1} 目標充足 ${c.sat}/${c.total}</h3><div><b>武器:</b> ${esc(c.weapon.name)}</div>${c.charm?.source?`<div><b>護石:</b> ${esc(c.charm.name)}</div>`:'<div><b>護石:</b> なし</div>'}<div>${PARTS.map(part=>{if(c.freeParts?.includes(part))return `<div>${PART_LABEL[part]}: <b>フリー</b></div>`;const a=c.armor.find(x=>x?.kind===part);return `<div>${PART_LABEL[part]}: ${esc(a?.name||'—')}</div>`;}).join('')}</div>${renderAllActiveSkills(c)}<div class="small">装飾品: ${c.decos.length?c.decos.map(d=>`${esc(d.name)}×1`).join(' / '):'なし'}</div>${c.remaining.length?`<div class="warn">目標不足: ${c.remaining.map(x=>esc(x.name)+' Lv'+x.need).join(' / ')}</div>`:'<div class="ok">目標スキル充足</div>'}</section>`).join('');}
+function renderResults(cands,meta){const r=$('results');if(!cands.length){$('status').classList.remove('hidden');$('status').textContent='候補なし';r.innerHTML='';return;}$('status').classList.remove('hidden');$('status').textContent=`検索 ${meta.evaluated.toLocaleString()}件を評価${meta.stopped?'（探索上限または時間上限で打ち切り）':''}`;r.innerHTML=cands.map((c,i)=>`<section class="card result"><h3>#${i+1} 目標充足 ${c.sat}/${c.total}</h3><div><b>武器:</b> ${c.weapon?.id==='free-weapon'?'<b>フリー</b>':esc(c.weapon?.name||'—')}</div>${c.charm?.id==='free-charm'?'<div><b>護石:</b> <b>フリー</b></div>':c.charm?.source?`<div><b>護石:</b> ${esc(c.charm.name)}</div>`:'<div><b>護石:</b> なし</div>'}<div>${PARTS.map(part=>{if(c.freeParts?.includes(part))return `<div>${PART_LABEL[part]}: <b>フリー</b></div>`;const a=c.armor.find(x=>x?.kind===part);return `<div>${PART_LABEL[part]}: ${esc(a?.name||'—')}</div>`;}).join('')}</div>${renderAllActiveSkills(c)}<div class="small">装飾品: ${c.decos.length?c.decos.map(d=>`${esc(d.name)}×1`).join(' / '):'なし'}</div>${c.remaining.length?`<div class="warn">目標不足: ${c.remaining.map(x=>esc(x.name)+' Lv'+x.need).join(' / ')}</div>`:'<div class="ok">目標スキル充足</div>'}</section>`).join('');}
 async function fetchJSON(path){const r=await fetch(API+path);if(!r.ok)throw new Error(`${path} HTTP ${r.status}`);return r.json();}
 async function loadDB(){try{const [armor,armorSets,weapons,skills,deco,charms]=await Promise.all(['/armor','/armor/sets','/weapons','/skills','/decorations','/charms'].map(fetchJSON));W.armor=armor;W.armorSets=armorSets;W.weapons=weapons;W.skills=skills;W.decorations=deco;W.charms=charms;W.loaded=true;$('dbVersion').textContent=`Wilds 日本語DB loaded / Armor ${armor.length} / Weapons ${weapons.length} / Skills ${skills.length} / Decorations ${deco.length} / Charms ${charms.length}`;renderPickers();$('solveBtn').disabled=false;$('solveBtn').textContent='検索する';const saved=MHStorage.load('wilds');if(saved?.data)restore(saved.data);}catch(e){$('dbVersion').textContent='Wilds 日本語DBの読み込みに失敗しました';$('status').classList.remove('hidden');$('status').textContent='DB接続エラー: '+e.message;}}
 function stateData(){return {targets:W.targets,setTargets:W.setTargets,groupTargets:W.groupTargets};}
