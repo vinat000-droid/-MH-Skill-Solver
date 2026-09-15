@@ -1,5 +1,5 @@
 const API='https://wilds.mhdb.io/ja';
-const W={armor:[],armorSets:[],weapons:[],skills:[],decorations:[],charms:[],targets:[],setTargets:[],groupTargets:[],loaded:false};
+const W={armor:[],armorSets:[],weapons:[],skills:[],decorations:[],charms:[],targets:[],setTargets:[],groupTargets:[],weaponKind:'',loaded:false};
 const LIMITS={armorBeam:260,armorPartPool:80,weaponPool:220,charmPool:100,pairPool:1200,maxEvaluations:180000,maxMilliseconds:5000,maxResults:30,freeCheckArmorPool:1000,freeCheckMilliseconds:1500};
 const $=id=>document.getElementById(id);
 const norm=s=>String(s||'').replace(/\s+/g,' ').trim();
@@ -11,11 +11,14 @@ function skillMaxLevel(skill){const levels=(skill?.ranks||[]).map(r=>Number(r.le
 function levelOptions(max,current=1){return Array.from({length:max},(_,n)=>{const v=n+1;return `<option value="${v}" ${v===Number(current)?'selected':''}>Lv${v}</option>`;}).join('');}
 function skillSearchText(skill){const local=(window.WILDS_SKILL_DETAILS||{})[norm(skill?.name)]||{};const parts=[skill?.name,skill?.description,local.description,...(local.levels||[]).flatMap(r=>[r?.effect,r?.description,r?.text])];for(const r of (skill?.ranks||[]))parts.push(r?.description,r?.effect,r?.text);return norm(parts.filter(Boolean).join(' ')).toLocaleLowerCase('ja');}
 function setGroupRequired(skill,level){const r=(skill?.ranks||[]).find(x=>Number(x.level)===Number(level));return Number(r?.setPiecesRequired)||null;}
-function makeSkillPicker(containerId,kind,targets,addFn){const p=$(containerId);p.innerHTML='';const usable=W.skills.filter(x=>x&&(kind==='normal'?(x.kind==='armor'||x.kind==='weapon'):x.kind===kind));const search=document.createElement('input');search.type='search';search.placeholder='スキル名・効果で検索…';search.autocomplete='off';const sel=document.createElement('select');const lv=document.createElement('select');const b=document.createElement('button');b.textContent='＋追加';function sync(){const sk=usable.find(x=>String(x.id)===String(sel.value));const max=skillMaxLevel(sk);lv.innerHTML=levelOptions(max,Math.min(Number(lv.value)||1,max));}function populate(filter=''){const q=norm(filter).toLocaleLowerCase('ja');const list=q?usable.filter(x=>skillSearchText(x).includes(q)):usable;const prev=sel.value;sel.innerHTML='<option value="">スキルを選択…</option>'+list.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');if(list.some(x=>String(x.id)===String(prev)))sel.value=prev;sync();}sel.onchange=sync;search.oninput=()=>populate(search.value);b.onclick=()=>{const id=+sel.value;if(!id)return;const sk=usable.find(x=>x.id===id);const level=Math.min(Number(lv.value)||1,skillMaxLevel(sk));addFn({id,name:sk.name,level});};p.append(search,sel,lv,b);populate();}
-function renderPickers(){makeSkillPicker('normalSkillPicker','normal',W.targets,t=>{upsertTarget(W.targets,t);renderTargets();save();});makeSkillPicker('setSkillPicker','set',W.setTargets,t=>{upsertTarget(W.setTargets,t);renderTargets();save();});makeSkillPicker('groupSkillPicker','group',W.groupTargets,t=>{upsertTarget(W.groupTargets,t);renderTargets();save();});}
+function makeSkillPicker(containerId,kind,targets,addFn){const p=$(containerId);p.innerHTML='';const weaponSkillIds=new Set(W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind).flatMap(w=>(w?.skills||[]).map(s=>String(s?.skill?.id))));const usable=W.skills.filter(x=>x&&(kind==='normal'?x.kind==='armor':kind==='weapon'?x.kind==='weapon'&&W.weaponKind&&weaponSkillIds.has(String(x.id)):x.kind===kind));const search=document.createElement('input');search.type='search';search.placeholder='スキル名・効果で検索…';search.autocomplete='off';const sel=document.createElement('select');const lv=document.createElement('select');const b=document.createElement('button');b.textContent='＋追加';function sync(){const sk=usable.find(x=>String(x.id)===String(sel.value));const max=skillMaxLevel(sk);lv.innerHTML=levelOptions(max,Math.min(Number(lv.value)||1,max));}function populate(filter=''){const q=norm(filter).toLocaleLowerCase('ja');const list=q?usable.filter(x=>skillSearchText(x).includes(q)):usable;const prev=sel.value;sel.innerHTML='<option value="">スキルを選択…</option>'+list.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('');if(list.some(x=>String(x.id)===String(prev)))sel.value=prev;sync();}sel.onchange=sync;search.oninput=()=>populate(search.value);b.onclick=()=>{const id=+sel.value;if(!id)return;const sk=usable.find(x=>x.id===id);const level=Math.min(Number(lv.value)||1,skillMaxLevel(sk));addFn({id,name:sk.name,level});};p.append(search,sel,lv,b);populate();}
+function weaponKindLabel(k){return ({'great-sword':'大剣','long-sword':'太刀','sword-shield':'片手剣','dual-blades':'双剣','hammer':'ハンマー','hunting-horn':'狩猟笛','lance':'ランス','gunlance':'ガンランス','switch-axe':'スラッシュアックス','charge-blade':'チャージアックス','insect-glaive':'操虫棍','light-bowgun':'ライトボウガン','heavy-bowgun':'ヘビィボウガン','bow':'弓'})[k]||k;}
+function weaponKinds(){return [...new Set(W.weapons.map(w=>w?.kind).filter(Boolean))].sort((a,b)=>weaponKindLabel(a).localeCompare(weaponKindLabel(b),'ja'));}
+function renderWeaponKindPicker(){const s=$('weaponKind');if(!s)return;const prev=W.weaponKind;const kinds=weaponKinds();s.innerHTML='<option value="">武器種を選択…</option>'+kinds.map(k=>`<option value="${esc(k)}">${esc(weaponKindLabel(k))}</option>`).join('');if(kinds.includes(prev))s.value=prev;else W.weaponKind='';renderPickers();}
+function renderPickers(){makeSkillPicker('normalSkillPicker','normal',W.targets,t=>{upsertTarget(W.targets,t);renderTargets();save();});makeSkillPicker('weaponSkillPicker','weapon',W.targets,t=>{upsertTarget(W.targets,t);renderTargets();save();});makeSkillPicker('setSkillPicker','set',W.setTargets,t=>{upsertTarget(W.setTargets,t);renderTargets();save();});makeSkillPicker('groupSkillPicker','group',W.groupTargets,t=>{upsertTarget(W.groupTargets,t);renderTargets();save();});}
 function upsertTarget(arr,t){const x=arr.find(v=>v.id===t.id);if(x)x.level=t.level;else arr.push(t);}
-function renderTargetRows(id,arr,kind){const d=$(id);d.innerHTML=arr.map((t,i)=>{const sk=W.skills.find(x=>x.id===t.id);const max=skillMaxLevel(sk);const level=Math.min(Number(t.level)||1,max);t.level=level;const req=kind==='set'||kind==='group'?setGroupRequired(sk,level):null;const info=wildsSkillInfo(t.name);const levels=(info.levels||[]).filter(x=>x.level===level);return `<div class="selected-skill"><b>${esc(t.name)}</b><select data-i="${i}" class="targetLv">${levelOptions(max,level)}</select>${req?`<span class="small">${req}部位</span>`:''}${MHSkillPopover.button(t.name,{...info,levels})}<button data-i="${i}" class="removeTarget">削除</button></div>`;}).join('');d.querySelectorAll('.targetLv').forEach(e=>e.onchange=()=>{arr[+e.dataset.i].level=+e.value;renderTargets();save();});d.querySelectorAll('.removeTarget').forEach(e=>e.onclick=()=>{arr.splice(+e.dataset.i,1);renderTargets();save();});}
-function renderTargets(){renderTargetRows('selectedNormalSkills',W.targets,'normal');renderTargetRows('selectedSetSkills',W.setTargets,'set');renderTargetRows('selectedGroupSkills',W.groupTargets,'group');}
+function renderTargetRows(id,arr,kind,predicate=null){const d=$(id);d.innerHTML=arr.map((t,i)=>({t,i})).filter(x=>!predicate||predicate(x.t)).map(({t,i})=>{const sk=W.skills.find(x=>x.id===t.id);const max=skillMaxLevel(sk);const level=Math.min(Number(t.level)||1,max);t.level=level;const req=kind==='set'||kind==='group'?setGroupRequired(sk,level):null;const info=wildsSkillInfo(t.name);const levels=(info.levels||[]).filter(x=>x.level===level);return `<div class="selected-skill"><b>${esc(t.name)}</b><select data-i="${i}" class="targetLv">${levelOptions(max,level)}</select>${req?`<span class="small">${req}部位</span>`:''}${MHSkillPopover.button(t.name,{...info,levels})}<button data-i="${i}" class="removeTarget">削除</button></div>`;}).join('');d.querySelectorAll('.targetLv').forEach(e=>e.onchange=()=>{arr[+e.dataset.i].level=+e.value;renderTargets();save();});d.querySelectorAll('.removeTarget').forEach(e=>e.onclick=()=>{arr.splice(+e.dataset.i,1);renderTargets();save();});}
+function renderTargets(){renderTargetRows('selectedNormalSkills',W.targets,'normal',t=>W.skills.find(x=>x.id===t.id)?.kind==='armor');renderTargetRows('selectedWeaponSkills',W.targets,'normal',t=>W.skills.find(x=>x.id===t.id)?.kind==='weapon');renderTargetRows('selectedSetSkills',W.setTargets,'set');renderTargetRows('selectedGroupSkills',W.groupTargets,'group');}
 function itemSkills(item){const m=new Map();for(const x of (item?.skills||[])){const k=norm(x.skill?.name);if(k)m.set(k,(m.get(k)||0)+(Number(x.level)||0));}return m;}
 function mergeMaps(arr){const m=new Map();for(const x of arr)for(const [k,v] of x)m.set(k,(m.get(k)||0)+v);return m;}
 function slots(item){return (item?.slots||[]).map(Number).filter(Boolean).sort((a,b)=>b-a);}
@@ -41,7 +44,7 @@ function bonusSkillForArmor(a,kind){const direct=armorSetMeta(a)?.[kind==='set'?
 function armorIdentity(a){return String(a?.id??a?.gameId??a?._id??`${a?.kind}:${a?.name}`);}
 function setIdentity(a){const meta=armorSetMeta(a);return String(meta?.id??meta?.gameId??meta?.name??'');}
 function armorBonusPieces(armor,kind,name){const key=norm(name);if(kind==='group')return armor.reduce((n,a)=>n+(norm(bonusSkillForArmor(a,'group')?.name)===key?1:0),0);const bySet=new Map();for(const a of armor){if(norm(bonusSkillForArmor(a,'set')?.name)!==key)continue;const sid=setIdentity(a);if(sid)bySet.set(sid,(bySet.get(sid)||0)+1);}return Math.max(0,...bySet.values());}
-function armorBonusSatisfied(armor,targets,kind){for(const t of targets){const sk=W.skills.find(x=>x.id===t.id);const req=setGroupRequired(sk,t.level);if(req&&armorBonusPieces(armor,kind,t.name)<req)return false;}return true;}
+function armorBonusSatisfied(armor,targets,kind){for(const t of targets){const sk=W.skills.find(x=>x.id===t.id);const req=setGroupRequired(sk,t.level);if(!req)return false;if(armorBonusPieces(armor,kind,t.name)<req)return false;}return true;}
 function armorCandidateScore(st){
   let s=0;
   for(const t of W.targets)s+=Math.min(Number(t.level)||0,st.skills.get(norm(t.name))||0);
@@ -142,60 +145,78 @@ function evaluateCombo(weapon,armor,charm){
 }
 async function seriesOnlyCandidates(progress){
   const started=performance.now();
-  const targetNames=new Set([...W.setTargets,...W.groupTargets].map(t=>norm(t.name)));
+  const out=[];const seen=new Set();const deadline=started+LIMITS.maxMilliseconds;
   const byPart={};for(const p of PARTS)byPart[p]=W.armor.filter(a=>a?.kind===p);
-  let states=[{armor:[],score:0}];
-  for(let i=0;i<PARTS.length;i++){
+  const relevantNames=new Set([...W.setTargets,...W.groupTargets].map(t=>norm(t.name)));
+  const pools={};for(const p of PARTS){
+    pools[p]=byPart[p].filter(a=>[bonusSkillForArmor(a,'set'),bonusSkillForArmor(a,'group')].some(x=>relevantNames.has(norm(x?.name))));
+  }
+  const targetSatisfied=(armor)=>armorBonusSatisfied(armor,W.setTargets,'set')&&armorBonusSatisfied(armor,W.groupTargets,'group');
+  function addResult(armor){
+    if(!armor.length||!armorBonusSatisfied(armor,W.setTargets,'set'))return;
+    if(!armorBonusSatisfied(armor,W.groupTargets,'group'))return;
+    const key=PARTS.map(p=>armor.find(a=>a?.kind===p)?.id||'').join('|');
+    if(seen.has(key))return;seen.add(key);
+    const weapon={id:'free-weapon',name:'フリー',skills:[],slots:[]};
+    const charm={id:'free-charm',name:'フリー',skills:[],source:null};
+    out.push({weapon,charm,armor:armor.slice().sort((x,y)=>PARTS.indexOf(x.kind)-PARTS.indexOf(y.kind)),decos:[],remaining:[],skills:new Map(),sat:targetTotal(),total:targetTotal(),slotScore:armor.reduce((n,a)=>n+slots(a).reduce((u,v)=>u+v,0),0)});
+  }
+  function dfs(i,armor){
+    if(out.length>=LIMITS.maxResults||performance.now()>=deadline)return;
+    // Series/group conditions are the armor-search base. Once all are satisfied,
+    // stop selecting armor immediately; every unselected later part is free.
+    if(i>=PARTS.length){if(targetSatisfied(armor))addResult(armor);return;}
+    if(targetSatisfied(armor)){addResult(armor);return;}
     const part=PARTS[i];
-    const pool=byPart[part].filter(a=>[
-      bonusSkillForArmor(a,'set'),bonusSkillForArmor(a,'group')
-    ].some(x=>targetNames.has(norm(x?.name))));
-    const next=[];
-    // Empty means: this armor slot is intentionally left free. This is essential for
-    // series-only targets such as a 2-piece set bonus.
-    for(const st of states){
-      next.push({armor:st.armor,score:st.score});
-      for(const a of pool){
-        const armor=[...st.armor,a];
-        let score=0;
-        for(const t of W.setTargets)score+=Math.min(Number(t.level)||0,bonusLevel(armor,t,'set'))*100;
-        for(const t of W.groupTargets)score+=Math.min(Number(t.level)||0,bonusLevel(armor,t,'group'))*100;
-        score+=armor.reduce((n,x)=>n+slots(x).reduce((u,v)=>u+v,0),0);
-        next.push({armor,score});
-      }
+    // Skip is allowed only while the condition is still unresolved; it lets the
+    // next part supply the required set/group piece without manufacturing an all-free result.
+    dfs(i+1,armor);
+    const pool=pools[part]||[];
+    for(const a of pool){
+      dfs(i+1,[...armor,a]);
+      if(out.length>=LIMITS.maxResults||performance.now()>=deadline)return;
     }
-    next.sort((a,b)=>b.score-a.score);
-    states=next.slice(0,1200);
-    progress('②',`シリーズ防具を探索中（${i+1}/5）`,20+i*12);
-    await yieldUI();
-    if(performance.now()-started>LIMITS.maxMilliseconds)break;
   }
-  const valid=states.filter(st=>armorBonusSatisfied(st.armor,W.setTargets,'set')&&armorBonusSatisfied(st.armor,W.groupTargets,'group'));
-  valid.sort((a,b)=>b.score-a.score);
-  const unique=[];const seen=new Set();
-  for(const st of valid){
-    const key=PARTS.map(p=>st.armor.find(a=>a?.kind===p)?.id||'').join('|');
-    if(seen.has(key))continue;seen.add(key);unique.push(st);
-    if(unique.length>=LIMITS.maxResults)break;
-  }
-  const weapon={id:'free-weapon',name:'フリー',skills:[],slots:[]};
-  const charm={id:'free-charm',name:'フリー',skills:[],source:null};
-  const out=unique.map(st=>collapseFreeArmor({
-    weapon,charm,armor:st.armor,decos:[],remaining:[],skills:new Map(),
-    sat:targetTotal(),total:targetTotal(),slotScore:st.score
-  }));
-  return {candidates:out,estimated:valid.length,evaluated:valid.length,stopped:false,elapsed:Math.round(performance.now()-started)};
+  dfs(0,[]);
+  progress('②',`シリーズ防具を確定構成から探索中（${out.length}件）`,75);
+  await yieldUI();
+  return {candidates:out,estimated:out.length,evaluated:out.length,stopped:performance.now()>=deadline,elapsed:Math.round(performance.now()-started),mode:'series'};
 }
+
+function hasWeaponSkillTarget(){return W.targets.some(t=>W.skills.find(x=>String(x?.id)===String(t.id))?.kind==='weapon');}
+function isWeaponSkillOnly(){
+  return !W.setTargets.length&&!W.groupTargets.length&&W.targets.length>0&&W.targets.every(t=>{
+    const sk=W.skills.find(x=>String(x?.id)===String(t.id));
+    return sk?.kind==='weapon';
+  });
+}
+async function weaponOnlyCandidates(progress){
+  const started=performance.now();
+  const matched=[];
+  for(const w of W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind)){
+    const m=itemSkills(w);
+    const remaining=W.targets.map(t=>({name:norm(t.name),need:Math.max(0,Number(t.level||0)-(m.get(norm(t.name))||0))})).filter(x=>x.need>0);
+    if(!remaining.length){
+      matched.push({weapon:w,armor:[],charm:{id:'free-charm',name:'フリー',skills:[],source:null},decos:[],remaining:[],skills:m,sat:targetTotal(),total:targetTotal(),slotScore:slots(w).reduce((a,b)=>a+b,0),freeParts:[...PARTS]});
+    }
+  }
+  matched.sort((a,b)=>b.slotScore-a.slotScore||String(a.weapon?.name||'').localeCompare(String(b.weapon?.name||''),'ja'));
+  progress('②',`武器スキルを満たす武器を検索中（${W.weapons.length.toLocaleString()}件）`,70);
+  await yieldUI();
+  return {candidates:matched.slice(0,LIMITS.maxResults),estimated:W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind).length,evaluated:W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind).length,stopped:false,elapsed:Math.round(performance.now()-started),mode:'weaponOnly'};
+}
+
 function pairScore(w,c){return scoreItem(w,W.targets)+scoreItem(c,W.targets);}
 function makeWeaponCharmPairs(){
   const charms=flattenCharms();
-  const weaponPool=W.weapons.filter(Boolean).map(w=>({w,score:scoreItem(w,W.targets),slots:slots(w).reduce((s,x)=>s+x,0)})).sort((a,b)=>b.score-a.score||b.slots-a.slots).slice(0,LIMITS.weaponPool).map(x=>x.w);
+  const weaponPool=W.weapons.filter(w=>!W.weaponKind||w?.kind===W.weaponKind).map(w=>({w,score:scoreItem(w,W.targets),slots:slots(w).reduce((s,x)=>s+x,0)})).sort((a,b)=>b.score-a.score||b.slots-a.slots).slice(0,LIMITS.weaponPool).map(x=>x.w);
   const charmPool=charms.map(c=>({c,score:scoreItem(c,W.targets)})).sort((a,b)=>b.score-a.score).slice(0,LIMITS.charmPool).map(x=>x.c);
   const wc=[];for(const w of weaponPool)for(const c of charmPool)wc.push({w,c,s:pairScore(w,c),slots:slots(w).reduce((a,b)=>a+b,0)});
   wc.sort((a,b)=>b.s-a.s||b.slots-a.slots);return wc.slice(0,LIMITS.pairPool);
 }
 function rankCandidate(a,b){const aFull=a.sat===a.total,bFull=b.sat===b.total;if(aFull!==bFull)return aFull?-1:1;if(a.sat!==b.sat)return b.sat-a.sat;if(a.remaining.length!==b.remaining.length)return a.remaining.length-b.remaining.length;return b.slotScore-a.slotScore;}
 async function makeCandidates(progress){
+  if(isWeaponSkillOnly()) return weaponOnlyCandidates(progress);
   if(!W.targets.length && (W.setTargets.length||W.groupTargets.length)) return seriesOnlyCandidates(progress);
   const started=performance.now();const armorStates=armorCandidates();progress('②','武器・護石候補を絞り込み中',35);
   await yieldUI();const pairs=makeWeaponCharmPairs();
@@ -227,14 +248,26 @@ function allActiveSkills(c){const m=new Map();const free=new Set(c.freeParts||[]
   const shownArmor=c.armor.filter(a=>!free.has(a?.kind));const set=actualBonusSkills(shownArmor,'set');for(const [n,lv] of set)m.set(n,Math.max(m.get(n)||0,lv));const group=actualBonusSkills(shownArmor,'group');for(const [n,pieces] of group){const sk=W.skills.find(s=>norm(s.name)===n);let lv=0;for(const r of (sk?.ranks||[])){if(Number(r.setPiecesRequired)&&pieces>=Number(r.setPiecesRequired))lv=Math.max(lv,Number(r.level)||0);}if(lv)m.set(n,Math.max(m.get(n)||0,lv));}
   return [...m.entries()].sort((a,b)=>a[0].localeCompare(b[0],'ja'));}
 function renderAllActiveSkills(c){const list=allActiveSkills(c);return `<details open class="active-skills"><summary>発動スキル（${list.length}種）</summary><div class="skill-list">${list.map(([name,lv])=>`<div class="active-skill-line"><span>${esc(name)} Lv${lv}</span>${MHSkillPopover.button(name,wildsSkillInfo(name))}</div>`).join('')}</div></details>`;}
-function renderResults(cands,meta){const r=$('results');if(!cands.length){$('status').classList.remove('hidden');$('status').textContent='候補なし';r.innerHTML='';return;}$('status').classList.remove('hidden');$('status').textContent=`検索 ${meta.evaluated.toLocaleString()}件を評価${meta.stopped?'（探索上限または時間上限で打ち切り）':''}`;r.innerHTML=cands.map((c,i)=>`<section class="card result"><h3>#${i+1} 目標充足 ${c.sat}/${c.total}</h3><div><b>武器:</b> ${c.weapon?.id==='free-weapon'?'<b>フリー</b>':esc(c.weapon?.name||'—')}</div>${c.charm?.id==='free-charm'?'<div><b>護石:</b> <b>フリー</b></div>':c.charm?.source?`<div><b>護石:</b> ${esc(c.charm.name)}</div>`:'<div><b>護石:</b> なし</div>'}<div>${PARTS.map(part=>{if(c.freeParts?.includes(part))return `<div>${PART_LABEL[part]}: <b>フリー</b></div>`;const a=c.armor.find(x=>x?.kind===part);return `<div>${PART_LABEL[part]}: ${esc(a?.name||'—')}</div>`;}).join('')}</div>${renderAllActiveSkills(c)}<div class="small">装飾品: ${c.decos.length?c.decos.map(d=>`${esc(d.name)}×1`).join(' / '):'なし'}</div>${c.remaining.length?`<div class="warn">目標不足: ${c.remaining.map(x=>esc(x.name)+' Lv'+x.need).join(' / ')}</div>`:'<div class="ok">目標スキル充足</div>'}</section>`).join('');}
-async function fetchJSON(path){const r=await fetch(API+path);if(!r.ok)throw new Error(`${path} HTTP ${r.status}`);return r.json();}
+function renderResults(cands,meta){
+  const r=$('results');
+  if(!cands.length){$('status').classList.remove('hidden');$('status').textContent='候補なし';r.innerHTML='';return;}
+  $('status').classList.remove('hidden');
+  $('status').textContent=meta.mode==='weaponOnly'?`該当武器 ${cands.length}件（DB ${meta.evaluated.toLocaleString()}件を確認）`:`検索 ${meta.evaluated.toLocaleString()}件を評価${meta.stopped?'（探索上限または時間上限で打ち切り）':''}`;
+  if(meta.mode==='weaponOnly'){
+    r.innerHTML=cands.map((c,i)=>`<section class="card result"><h3>#${i+1} ${esc(c.weapon?.name||'—')}</h3><div class="grid"><div class="piece"><b>武器スキル</b><div>${[...(c.weapon?.skills||[])].map(s=>`${esc(s.skill?.name||'')} Lv${Number(s.level)||0}`).join(' / ')||'—'}</div></div><div class="piece"><b>武器スロット</b><div>${slots(c.weapon).join(' / ')||'なし'}</div></div></div><div class="small" style="margin-top:10px">防具：フリー　／　護石：フリー</div></section>`).join('');
+    return;
+  }
+  r.innerHTML=cands.map((c,i)=>`<section class="card result"><h3>#${i+1} 目標充足 ${c.sat}/${c.total}</h3><div><b>武器:</b> ${c.weapon?.id==='free-weapon'?'<b>フリー</b>':esc(c.weapon?.name||'—')}</div>${c.charm?.id==='free-charm'?'<div><b>護石:</b> <b>フリー</b></div>':c.charm?.source?`<div><b>護石:</b> ${esc(c.charm.name)}</div>`:'<div><b>護石:</b> なし</div>'}<div>${PARTS.map(part=>{if(c.freeParts?.includes(part))return `<div>${PART_LABEL[part]}: <b>フリー</b></div>`;const a=c.armor.find(x=>x?.kind===part);return `<div>${PART_LABEL[part]}: ${esc(a?.name||'—')}</div>`;}).join('')}</div>${renderAllActiveSkills(c)}<div class="small">装飾品: ${c.decos.length?c.decos.map(d=>`${esc(d.name)}×1`).join(' / '):'なし'}</div>${c.remaining.length?`<div class="warn">目標不足: ${c.remaining.map(x=>esc(x.name)+' Lv'+x.need).join(' / ')}`:'<div class="ok">目標スキル充足</div>'}</section>`).join('');
+}
+
 async function loadDB(){try{const [armor,armorSets,weapons,skills,deco,charms]=await Promise.all(['/armor','/armor/sets','/weapons','/skills','/decorations','/charms'].map(fetchJSON));W.armor=armor;W.armorSets=armorSets;W.weapons=weapons;W.skills=skills;W.decorations=deco;W.charms=charms;W.loaded=true;$('dbVersion').textContent=`Wilds 日本語DB loaded / Armor ${armor.length} / Weapons ${weapons.length} / Skills ${skills.length} / Decorations ${deco.length} / Charms ${charms.length}`;renderPickers();$('solveBtn').disabled=false;$('solveBtn').textContent='検索する';const saved=MHStorage.load('wilds');if(saved?.data)restore(saved.data);}catch(e){$('dbVersion').textContent='Wilds 日本語DBの読み込みに失敗しました';$('status').classList.remove('hidden');$('status').textContent='DB接続エラー: '+e.message;}}
-function stateData(){return {targets:W.targets,setTargets:W.setTargets,groupTargets:W.groupTargets};}
+function stateData(){return {targets:W.targets,setTargets:W.setTargets,groupTargets:W.groupTargets,weaponKind:W.weaponKind};}
 function save(){MHStorage.save('wilds',stateData());}
-function restore(d){W.targets=d.targets||[];W.setTargets=d.setTargets||[];W.groupTargets=d.groupTargets||[];renderTargets();}
+function restore(d){W.targets=d.targets||[];W.setTargets=d.setTargets||[];W.groupTargets=d.groupTargets||[];W.weaponKind=d.weaponKind||'';renderTargets();if(W.loaded)renderWeaponKindPicker();}
 $('solveBtn').onclick=async()=>{
   if(!W.loaded||(!W.targets.length&&!W.setTargets.length&&!W.groupTargets.length)){$('status').classList.remove('hidden');$('status').textContent='目標スキルを1つ以上選択してください。';return;}
+  if(hasWeaponSkillTarget()&&!W.weaponKind){$('status').classList.remove('hidden');$('status').textContent='武器スキルを検索する場合は、武器種を選択してください。';return;}
   if(!W.targets.length&&!W.setTargets.length&&W.groupTargets.length){$('status').classList.remove('hidden');$('status').textContent='グループスキルだけでは検索できません。通常スキルまたはシリーズスキルを1つ以上指定してください。';return;}$('solveBtn').disabled=true;MHSearchUI.start();try{MHSearchUI.step('①','防具候補を枝刈り探索中',15);await yieldUI();const meta=await makeCandidates((n,t,p)=>MHSearchUI.step(n,t,p));renderResults(meta.candidates,meta);save();MHSearchUI.done(meta.stopped?'探索上限に達したため打ち切りました':'検索完了');}catch(e){console.error(e);MHSearchUI.error(e.message||String(e));$('status').classList.remove('hidden');$('status').textContent='検索エラー: '+(e.message||e);}finally{$('solveBtn').disabled=false;}};
-$('saveBtn').onclick=save;$('loadBtn').onclick=()=>{const x=MHStorage.load('wilds');if(x?.data)restore(x.data);};$('clearSaveBtn').onclick=()=>{MHStorage.clear('wilds');W.targets=[];W.setTargets=[];W.groupTargets=[];renderTargets();};
+$('saveBtn').onclick=save;$('loadBtn').onclick=()=>{const x=MHStorage.load('wilds');if(x?.data)restore(x.data);};$('clearSaveBtn').onclick=()=>{MHStorage.clear('wilds');W.targets=[];W.setTargets=[];W.groupTargets=[];W.weaponKind='';renderTargets();if(W.loaded)renderWeaponKindPicker();};
+const _loadDB=loadDB;loadDB=async()=>{await _loadDB();const s=$('weaponKind');if(s)s.onchange=()=>{W.weaponKind=s.value;renderPickers();save();};};
 loadDB();
