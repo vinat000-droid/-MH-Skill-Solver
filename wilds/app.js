@@ -213,6 +213,56 @@ async function seriesOnlyCandidates(progress){
   await yieldUI();
   return {candidates:out,estimated:out.length,evaluated:out.length,stopped:performance.now()>=deadline,elapsed:Math.round(performance.now()-started),mode:'series'};
 }
+async function seriesWithNormalCandidates(progress){
+  const started=performance.now();
+  const base=await seriesOnlyCandidates(()=>progress('②','シリーズ防具を先に確定中',45));
+  const armorTargetsList=armorTargets();
+  const weapons=W.weaponKind?W.weapons.filter(w=>w?.kind===W.weaponKind):[];
+  const charms=flattenCharms();
+  const charmPool=charms.slice().sort((a,b)=>scoreItem(b,armorTargetsList)-scoreItem(a,armorTargetsList)||slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0)).slice(0,LIMITS.charmPool);
+  const freeWeapon={id:'free-weapon',name:'フリー',skills:[],slots:[]};
+  const out=[];const deadline=started+LIMITS.maxMilliseconds;const total=targetTotal();
+  for(const core of base.candidates){
+    if(performance.now()>=deadline)break;
+    const fixed=new Set(core.armor.map(a=>a?.kind).filter(Boolean));
+    const freeParts=PARTS.filter(p=>!fixed.has(p));
+    let beams=[{armor:core.armor.slice(),skills:mergeMaps(core.armor.map(itemSkills)),slotScore:core.slotScore}];
+    for(const part of freeParts){
+      const pool=W.armor.filter(a=>a?.kind===part).slice().sort((a,b)=>scoreItem(b,armorTargetsList)-scoreItem(a,armorTargetsList)||slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0)).slice(0,LIMITS.armorPartPool);
+      const next=[];for(const st of beams)for(const a of pool)next.push({armor:[...st.armor,a],skills:mergeMaps([st.skills,itemSkills(a)]),slotScore:st.slotScore+slots(a).reduce((x,y)=>x+y,0)});
+      next.sort((a,b)=>scoreItem(b.skills,armorTargetsList)-scoreItem(a.skills,armorTargetsList)||b.slotScore-a.slotScore);beams=next.slice(0,LIMITS.armorBeam);
+    }
+    let coreFound=false;
+    for(const st of beams){
+      for(const charm of charmPool){
+        const ev=evaluateCombo(freeWeapon,st.armor,charm);
+        if(ev.sat===total){out.push({...ev,freeParts:collapseFreeArmor(ev).freeParts});coreFound=true;break;}
+        if(performance.now()>=deadline)break;
+      }
+      if(coreFound||performance.now()>=deadline)break;
+    }
+    if(!coreFound&&weapons.length){
+      const wt=W.targets.filter(t=>targetSource(t)==='weapon'&&skillCanComeFromWeapon(t));
+      const wp=weapons.filter(w=>wt.some(t=>(itemSkills(w).get(norm(t.name))||0)>0)).sort((a,b)=>scoreItem(b,wt)-scoreItem(a,wt)||slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0));
+      for(const st of beams){
+        for(const w of wp){
+          for(const charm of charmPool){
+            const ev=evaluateCombo(w,st.armor,charm);
+            if(ev.sat===total){out.push({...ev,freeParts:collapseFreeArmor(ev).freeParts});coreFound=true;break;}
+            if(performance.now()>=deadline)break;
+          }
+          if(coreFound||performance.now()>=deadline)break;
+        }
+        if(coreFound||performance.now()>=deadline)break;
+      }
+    }
+    if(out.length>=LIMITS.maxResults)break;
+    progress('③',`シリーズ固定後の防具側充足を評価中（${out.length}件）`,80);await yieldUI();
+  }
+  out.sort(rankCandidate);
+  return {candidates:out.slice(0,LIMITS.maxResults),estimated:base.candidates.length,evaluated:out.length,stopped:performance.now()>=deadline,elapsed:Math.round(performance.now()-started),mode:'seriesNormal'};
+}
+
 async function seriesWithWeaponCandidates(progress){
   return seriesWithWeaponAndNormalCandidates(progress);
 }
@@ -309,17 +359,65 @@ function makeWeaponCharmPairs(){
   wc.sort((a,b)=>b.s-a.s||b.slots-a.slots);return wc.slice(0,LIMITS.pairPool);
 }
 function rankCandidate(a,b){const aFull=a.sat===a.total,bFull=b.sat===b.total;if(aFull!==bFull)return aFull?-1:1;if(a.sat!==b.sat)return b.sat-a.sat;if(a.remaining.length!==b.remaining.length)return a.remaining.length-b.remaining.length;return b.slotScore-a.slotScore;}
+
+async function armorFirstCandidates(progress){
+  const started=performance.now();
+  const armorStates=armorCandidates();
+  const charms=flattenCharms();
+  const armorTargetList=armorTargets();
+  const fallbackTargets=weaponTargets().filter(t=>skillCanComeFromArmor(t));
+  const searchTargets=[...armorTargetList,...fallbackTargets.filter(t=>!armorTargetList.some(a=>String(a.id)===String(t.id)))];
+  const charmPool=charms.slice().sort((a,b)=>scoreItem(b,searchTargets)-scoreItem(a,searchTargets)||slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0)).slice(0,LIMITS.charmPool);
+  const weapons=W.weaponKind?W.weapons.filter(w=>w?.kind===W.weaponKind):[];
+  const out=[];const total=targetTotal();const deadline=started+LIMITS.maxMilliseconds;
+  const freeWeapon={id:'free-weapon',name:'フリー',skills:[],slots:[]};
+  const freeCharm={id:'free-charm',name:'フリー',skills:[],source:null};
+
+  for(let ai=0;ai<armorStates.length;ai++){
+    if(performance.now()>=deadline)break;
+    const armor=armorStates[ai].set;
+    let found=false;
+    // まず武器を使わず、防具＋護石＋装飾品だけで成立するか確認する。
+    for(const charm of charmPool){
+      const ev=evaluateCombo(freeWeapon,armor,charm);
+      if(ev.sat===total){out.push({...ev,freeParts:collapseFreeArmor(ev).freeParts});found=true;break;}
+      if(performance.now()>=deadline)break;
+    }
+    // 防具側で不足した場合だけ、選択された武器種から武器を再検索する。
+    if(!found&&weapons.length){
+      const candidates=weapons.filter(w=>searchTargets.some(t=>targetSource(t)==='weapon'&&skillCanComeFromWeapon(t)&&((itemSkills(w).get(norm(t.name))||0)>0)))
+        .sort((a,b)=>scoreItem(b,weaponTargets())-scoreItem(a,weaponTargets())||slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0));
+      for(const w of candidates){
+        for(const charm of charmPool){
+          const ev=evaluateCombo(w,armor,charm);
+          if(ev.sat===total){out.push({...ev,freeParts:collapseFreeArmor(ev).freeParts});found=true;break;}
+          if(performance.now()>=deadline)break;
+        }
+        if(found||performance.now()>=deadline)break;
+      }
+    }
+    if(out.length>=LIMITS.maxResults)break;
+    if(ai%20===0){progress('③',`防具側で充足確認中 ${(ai+1).toLocaleString()} / ${armorStates.length.toLocaleString()}`,65);await yieldUI();}
+  }
+  out.sort(rankCandidate);
+  return {candidates:out.slice(0,LIMITS.maxResults),estimated:armorStates.length,evaluated:armorStates.length,stopped:performance.now()>=deadline,elapsed:Math.round(performance.now()-started),mode:'armorFirst'};
+}
+
 async function makeCandidates(progress){
   if(isWeaponSkillOnly()&&!W.targets.some(t=>skillCanComeFromArmor(t))) return weaponOnlyCandidates(progress);
   // シリーズ条件がある場合は、通常スキル検索より先にシリーズ防具を確定する。
   // シリーズ＋武器スキルでは、シリーズを満たした部位を固定し、武器だけを後段で探索する。
-  if((W.setTargets.length||W.groupTargets.length) && hasWeaponSkillTarget()){
-    const hasArmorNormal=W.targets.some(t=>targetSource(t)!=='weapon');
-    return hasArmorNormal
-      ? seriesWithWeaponAndNormalCandidates(progress)
-      : seriesWithWeaponCandidates(progress);
+  if((W.setTargets.length||W.groupTargets.length) && (W.targets.length||hasWeaponSkillTarget())){
+    if(hasWeaponSkillTarget()){
+      const hasArmorNormal=W.targets.some(t=>targetSource(t)!=='weapon');
+      return hasArmorNormal
+        ? seriesWithWeaponAndNormalCandidates(progress)
+        : seriesWithWeaponCandidates(progress);
+    }
+    return seriesWithNormalCandidates(progress);
   }
   if(!W.targets.length && (W.setTargets.length||W.groupTargets.length)) return seriesOnlyCandidates(progress);
+  if(W.targets.length && !hasWeaponSkillTarget()) return armorFirstCandidates(progress);
   const started=performance.now();const armorStates=armorCandidates();progress('②','武器・護石候補を絞り込み中',35);
   await yieldUI();const pairs=makeWeaponCharmPairs();
   const estimated=armorStates.length*pairs.length;const maxEval=LIMITS.maxEvaluations;const deadline=started+LIMITS.maxMilliseconds;const total=targetTotal();
