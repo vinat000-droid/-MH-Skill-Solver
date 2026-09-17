@@ -1,7 +1,8 @@
 {
   "game": "Monster Hunter Wilds",
   "locale": "ja",
-  "data_checked": "2026-09-14",
+  "data_checked": "2026-09-18",
   "source": "MHDB Wilds API + GameWith supplemental skill details",
-  "status": "solver-integrated: weapons, armor, decorations, charms, series/group targets"
+  "status": "source-aware integrated solver + randomized charm support",
+  "random_charm_rules": "wilds/data/random-charm-rules.json"
 }

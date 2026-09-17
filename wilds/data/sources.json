@@ -11,11 +11,24 @@
     "charms": "/charms"
   },
   "solverModel": {
-    "normalSkills": ["armor", "weapon"],
-    "setSkills": ["set"],
-    "groupSkills": ["group"],
-    "sources": ["weapon", "armor", "charm", "decoration", "armorSetBonus", "armorGroupBonus"],
+    "normalSkills": "all ordinary skills with a non-weapon-side source; normal targets can also be satisfied by weapon-side sources when present",
+    "weaponSkills": "weapon-only skills selected after weapon type; direct weapon skills and weapon decorations are considered",
+    "setSkills": [
+      "set"
+    ],
+    "groupSkills": [
+      "group"
+    ],
+    "sources": [
+      "weapon",
+      "armor",
+      "charm",
+      "weaponDecoration",
+      "armorDecoration",
+      "armorSetBonus",
+      "armorGroupBonus"
+    ],
     "artian": "base weapon data is available from /weapons; Gogma Artian random skill/reinforcement rolls are not modeled as guaranteed data"
   },
-  "notes": "Live API-backed database. Randomized charms are excluded from deterministic solver candidates. Series/group targets are solved from armor-set metadata and required piece counts."
+  "notes": "Live API-backed database. Randomized charms are excluded from deterministic solver candidates. Series/group targets are solved from armor-set metadata and required piece counts. Skill target pickers are source-aware and audit orphaned skill definitions at load."
 }
