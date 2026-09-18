@@ -315,6 +315,12 @@ async function seriesWithWeaponAndNormalCandidates(progress){
     }
     for(const st2 of beams){
       for(const w of weaponPool){
+        if(performance.now()>=deadline)break;
+        const freeCharm={id:'free-charm',name:'フリー',skills:[],source:null};
+        // まず防具＋武器＋装飾品だけで充足するか確認する。
+        const baseEv=complete(w,st2.armor,freeCharm);
+        if(!baseEv.remaining.length){out.push({...baseEv,freeParts:freeParts});out.sort(rankCandidate);if(out.length>LIMITS.maxResults)out.pop();continue;}
+        // ここで不足する場合のみ護石を検索する。
         for(const c of charmPool){
           if(performance.now()>=deadline)break;
           const ev=complete(w,st2.armor,c);
@@ -378,17 +384,25 @@ async function armorFirstCandidates(progress){
     if(performance.now()>=deadline)break;
     const armor=armorStates[ai].set;
     let found=false;
-    // まず武器を使わず、防具＋護石＋装飾品だけで成立するか確認する。
-    for(const charm of charmPool){
-      const ev=evaluateCombo(freeWeapon,armor,charm);
-      if(ev.sat===total){out.push({...ev,freeParts:collapseFreeArmor(ev).freeParts});found=true;break;}
-      if(performance.now()>=deadline)break;
+    // まず防具＋装飾品だけで成立するか確認する。護石はまだ使わない。
+    const baseEv=evaluateCombo(freeWeapon,armor,freeCharm);
+    if(baseEv.sat===total){out.push({...baseEv,freeParts:collapseFreeArmor(baseEv).freeParts});found=true;}
+    // 防具＋装飾品だけで不足した場合だけ、護石を検索する。
+    if(!found){
+      for(const charm of charmPool){
+        const ev=evaluateCombo(freeWeapon,armor,charm);
+        if(ev.sat===total){out.push({...ev,freeParts:collapseFreeArmor(ev).freeParts});found=true;break;}
+        if(performance.now()>=deadline)break;
+      }
     }
-    // 防具側で不足した場合だけ、選択された武器種から武器を再検索する。
+    // それでも不足した場合だけ、選択された武器種から武器を再検索する。
     if(!found&&weapons.length){
       const candidates=weapons.filter(w=>searchTargets.some(t=>skillCanComeFromWeapon(t)&&((itemSkills(w).get(norm(t.name))||0)>0)))
         .sort((a,b)=>scoreItem(b,weaponTargets())-scoreItem(a,weaponTargets())||slots(b).reduce((x,y)=>x+y,0)-slots(a).reduce((x,y)=>x+y,0));
       for(const w of candidates){
+        const baseWeaponEv=evaluateCombo(w,armor,freeCharm);
+        if(baseWeaponEv.sat===total){out.push({...baseWeaponEv,freeParts:collapseFreeArmor(baseWeaponEv).freeParts});found=true;break;}
+        // 武器＋防具＋装飾品でも不足する場合のみ護石を検索する。
         for(const charm of charmPool){
           const ev=evaluateCombo(w,armor,charm);
           if(ev.sat===total){out.push({...ev,freeParts:collapseFreeArmor(ev).freeParts});found=true;break;}
@@ -419,27 +433,8 @@ async function makeCandidates(progress){
   }
   if(!W.targets.length && (W.setTargets.length||W.groupTargets.length)) return seriesOnlyCandidates(progress);
   if(W.targets.length && !hasWeaponSkillTarget()) return armorFirstCandidates(progress);
-  const started=performance.now();const armorStates=armorCandidates();progress('②','武器・護石候補を絞り込み中',35);
-  await yieldUI();const pairs=makeWeaponCharmPairs();
-  const estimated=armorStates.length*pairs.length;const maxEval=LIMITS.maxEvaluations;const deadline=started+LIMITS.maxMilliseconds;const total=targetTotal();
-  progress('③',`候補を探索中（推定 ${estimated.toLocaleString()} / 上限 ${maxEval.toLocaleString()}）`,45);
-  const out=[];let evaluated=0,stopped=false;
-  outer:for(let ai=0;ai<armorStates.length;ai++){
-    const st=armorStates[ai];
-    for(let pi=0;pi<pairs.length;pi++){
-      if(evaluated>=maxEval||performance.now()>=deadline){stopped=true;break outer;}
-      const pair=pairs[pi];
-      // Fast lower-bound pruning: if equipment already reaches every target, no decoration search is needed.
-      const base=mergeMaps([st.skills,itemSkills(pair.w),itemSkills(pair.c)]);
-      let baseSat=0;for(const t of W.targets)baseSat+=Math.min(Number(t.level),base.get(norm(t.name))||0);
-      let bonusSat=0;for(const t of W.setTargets)bonusSat+=Math.min(Number(t.level),bonusLevel(st.set,t,'set'));for(const t of W.groupTargets)bonusSat+=Math.min(Number(t.level),bonusLevel(st.set,t,'group'));
-      const c=collapseFreeArmor(evaluateCombo(pair.w,st.set,pair.c));evaluated++;
-      if(c.sat===total||out.length<LIMITS.maxResults||baseSat+bonusSat>=Math.max(0,total-2)){out.push(c);out.sort(rankCandidate);if(out.length>LIMITS.maxResults)out.pop();}
-      if(evaluated%500===0){const pct=45+Math.min(50,Math.round(evaluated/Math.max(1,Math.min(estimated,maxEval))*50));progress('③',`候補を探索中 ${evaluated.toLocaleString()}件 / 推定 ${estimated.toLocaleString()}件`,pct);await yieldUI();}
-    }
-  }
-  out.sort(rankCandidate);
-  return {candidates:out.slice(0,LIMITS.maxResults),estimated,evaluated,stopped,elapsed:Math.round(performance.now()-started)};
+  // 通常スキル検索も、防具→装飾品→護石の順で評価する。
+  return armorFirstCandidates(progress);
 }
 function wildsSkillInfo(name){const sk=W.skills.find(x=>norm(x.name)===norm(name));const local=(window.WILDS_SKILL_DETAILS||{})[norm(name)]||{};const description=local.description||sk?.description||'';if(!sk)return {name,description,levels:local.levels||[]};const ranks=(sk.ranks||[]).map(r=>({level:Number(r.level)||0,effect:r.description||r.effect||r.text||''})).filter(x=>x.level&&x.effect);if(ranks.length){const localByLevel=new Map((local.levels||[]).map(x=>[Number(x.level),x.effect]));return {name,description,levels:ranks.map(x=>localByLevel.has(x.level)?{...x,effect:localByLevel.get(x.level)}:x)};}return {name,description,levels:description?[{level:1,effect:description}]:[]};}
 function actualBonusSkills(armor,kind){const result=new Map();if(kind==='group'){for(const a of armor){const b=bonusSkillForArmor(a,'group');const n=norm(b?.name);if(n)result.set(n,(result.get(n)||0)+1);}return result;}
