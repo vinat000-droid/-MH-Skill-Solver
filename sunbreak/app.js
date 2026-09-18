@@ -96,11 +96,12 @@ function fillDecos(slots,needMap){
   for(const d of ordered){let idx=-1;for(let i=0;i<slotsLeft.length;i++){if(!slotsLeft[i].used&&slotsLeft[i].size>=d.size){idx=i;break}}if(idx<0)continue;const useful=d.effects.some(([k,v])=>remaining[k]>0);if(!useful)continue;slotsLeft[idx].used=true;for(const[k,v]of d.effects)if(remaining[k]>0)remaining[k]=Math.max(0,remaining[k]-v);used.push({name:d.name,slot:d.size});if(Object.values(remaining).every(v=>v<=0))break}
   const done=Object.values(remaining).every(v=>v<=0);return{done,remaining,used,openSlots:slotsLeft.filter(x=>!x.used).map(x=>x.size)}
 }
-function charmCandidates(t,armorSkills){
+function charmCandidates(t,baseAfterDeco){
   const fixed=charm(); const out=[];
+  // Charms are evaluated AFTER armor/Qurious skills and decorations.
   // Empty input means 'no fixed charm'; do not penalize it as an illegal talisman.
   fixed.legal=Object.keys(fixed.effects).length||fixed.slots.some(Boolean)?legalCharmForTarget(fixed.effects,fixed.slots):true; out.push(fixed);
-  const n=need(armorSkills,t); const keys=Object.keys(n).filter(k=>n[k]>0).filter(k=>talismanRule(k));
+  const n=need(baseAfterDeco,t); const keys=Object.keys(n).filter(k=>n[k]>0).filter(k=>talismanRule(k));
   // Practical policy: generated recommendation = exactly one useful target skill.
   const candidates=[];
   // One-skill Haki candidates
@@ -118,20 +119,21 @@ function charmCandidates(t,armorSkills){
   out.push(...candidates.slice(0,80));
   return out;
 }
-function qPlan(armor,t,ch,slots){
-  const base=merge(armor.skills,ch.effects); const n=need(base,t); const plans=[]; const qs={};
+function qPlan(armor,t,slots){
+  const base={...armor.skills}; const n=need(base,t); const plans=[]; const qs={};
   const priorities=Object.keys(n).filter(k=>n[k]>0).sort((a,b)=>{
     const ad=state.decos.some(d=>d.effects.some(([k])=>k===a)),bd=state.decos.some(d=>d.effects.some(([k])=>k===b));
     const am=state.decos.filter(d=>d.effects.some(([k])=>k===a)).reduce((m,d)=>Math.min(m,d.size),99),bm=state.decos.filter(d=>d.effects.some(([k])=>k===b)).reduce((m,d)=>Math.min(m,d.size),99);
     return (ad-bd)||(bm-am)||n[b]-n[a]
   });
-  const pieces=armor.chosen||[];
+  const pieces=armor.chosen||[]; const usedParts=new Set();
   for(const k of priorities){
     let remain=n[k]; if(!remain)continue;
-    // Each Qurious skill addition is +1 on one armor piece. The solver only emits it when the skill exists in the real pool.
+    // Realistic solver rule: at most ONE newly added Qurious skill per armor piece.
     for(const piece of pieces){
-      if(remain<=0)break; const q=qLegal(k,piece); if(!q.legal)continue;
-      plans.push({part:piece.part,skill:k,legal:true,cost:q.cost,baseCost:q.base,compensation:q.compensation,reason:q.reason}); qs[k]=(qs[k]||0)+1; remain--;
+      if(remain<=0)break; if(usedParts.has(piece.part))continue;
+      const q=qLegal(k,piece); if(!q.legal)continue;
+      plans.push({part:piece.part,skill:k,legal:true,cost:q.cost,baseCost:q.base,compensation:q.compensation,reason:q.reason}); qs[k]=(qs[k]||0)+1; remain--; usedParts.add(piece.part);
     }
   }
   const after=merge(base,qs); const deco=fillDecos([...slots],need(after,t));
@@ -174,12 +176,34 @@ function solve(){
     MHSearchUI.step('②','スキル充足度・スロット構成を評価中',55);
     const results=[];const weapon=getWeaponSlots();
     for(const st of beams){
-      const charms=charmCandidates(t,st.skills);
+      // Priority order: armor innate skills → Qurious augmentation → decorations → charms.
+      // Charm slots are intentionally NOT used to place decorations, because the charm is
+      // selected only after the decoration solution has been evaluated.
+      let qplan={plans:[],skills:{},deco:null,complete:false,deficit:{}};
+      if($('allowQurious')?.checked){qplan=qPlan({...st,chosen:st.chosen},t,[...st.slots,...weapon]);}
+      const armorPlusQ=merge(st.skills,qplan.skills||{});
+      const deco=fillDecos([...st.slots,...weapon],need(armorPlusQ,t));
+      qplan.deco=deco; qplan.complete=deco.done; qplan.deficit=deco.remaining;
+      const decoSkills=merge(armorPlusQ,{});
+      for(const u of (deco.used||[])){const d=state.decos.find(x=>x.name===u.name);if(d)for(const[k,v]of d.effects)decoSkills[k]=(decoSkills[k]||0)+v;}
+
+      // Final checkpoint #1: armor + Qurious + decorations may already satisfy all targets.
+      // If so, stop here and never search charms.
+      if(deco.done){
+        const noCharm={label:'護石なし',effects:{},slots:[],source:'none',legal:true};
+        const m=metric(st,noCharm,t,deco,qplan);
+        results.push({chosen:st.chosen,armorSkills:st.skills,charm:noCharm,deco,qplan,metric:m});
+        continue;
+      }
+
+      // Only unresolved builds reach the charm stage. Once a charm is selected,
+      // perform one final decoration pass using the charm's skills AND slots.
+      const charms=charmCandidates(t,decoSkills);
       for(const ch of charms){
-        const base=merge(st.skills,ch.effects);const deco=fillDecos([...st.slots,...ch.slots,...weapon],need(base,t));
-        let qplan={plans:[],skills:{},deco,complete:deco.done,deficit:deco.remaining};
-        if($('allowQurious')?.checked){qplan=qPlan({...st,chosen:st.chosen},t,ch,[...st.slots,...ch.slots,...weapon]);}
-        const dec=qplan.deco||deco;const final=merge(base,qplan.skills||{});const m=metric(st,ch,t,dec,qplan);results.push({chosen:st.chosen,armorSkills:st.skills,charm:ch,deco:dec,qplan,metric:m});
+        const finalBase=merge(armorPlusQ,ch.effects||{});
+        const finalDeco=fillDecos([...st.slots,...weapon,...(ch.slots||[])],need(finalBase,t));
+        const m=metric(st,ch,t,finalDeco,qplan);
+        results.push({chosen:st.chosen,armorSkills:st.skills,charm:ch,deco:finalDeco,qplan,metric:m});
       }
     }
     results.sort((a,b)=>b.metric.score-a.metric.score);
